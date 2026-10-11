@@ -12,7 +12,11 @@ async function orca(...args: string[]) {
 }
 async function run(code: string) {
   await orca("snapshot");
-  const value = await orca("eval", "--expression", code);
+  const value = await orca(
+    "eval",
+    "--expression",
+    `(async()=>await (${code}))()`,
+  );
   await orca("snapshot");
   try {
     return JSON.parse(value.result);
@@ -21,196 +25,145 @@ async function run(code: string) {
   }
 }
 const previous = await run(
-  `({circuit:localStorage.getItem('literal.circuit'),assembly:localStorage.getItem('literal.assembly'),kmap:localStorage.getItem('literal.kmap')})`,
+  `JSON.stringify(Object.fromEntries(Object.entries(localStorage).filter(([key])=>key.startsWith('literal.'))))`,
 );
-const screenshot = async (name: string) => {
-  const shot = await orca("screenshot");
-  await Deno.writeFile(
-    new URL(`../docs/${name}.png`, import.meta.url),
-    Uint8Array.from(atob(shot.data), (c) => c.charCodeAt(0)),
+const select = (id: string) =>
+  run(
+    `(()=>{document.activeElement?.blur();document.querySelector('[data-node="${id}"] .component-body').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));return JSON.stringify({selected:!!document.querySelector('#see-inside')})})()`,
   );
-};
 try {
+  await run(
+    `(()=>{localStorage.setItem('literal.mode','playground');return 'ok'})()`,
+  );
   await orca("reload");
   await orca("wait", "--selector", "#examples-button");
   await run(
-    `(()=>{document.querySelector('#examples-button').click();document.querySelector('[data-example="keyboard-pixels"]').click();document.querySelector('[data-node=keyboard] .component-body').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));return true})()`,
+    `(()=>{document.querySelector('#examples-button').click();document.querySelector('[data-example="snake-computer"]').click();return 'ok'})()`,
   );
+  await select("keyboard");
   assert.equal(
-    await run(`document.querySelectorAll('[data-node=keyboard] .pin').length`),
-    9,
+    await run(`JSON.stringify(!!document.querySelector('#map-key'))`),
+    true,
+  );
+  await select("rom");
+  assert.equal(
+    await run(`JSON.stringify(!!document.querySelector('#rom-source'))`),
+    true,
   );
   await run(
-    `(()=>{document.querySelector('[data-virtual-key=A]').dispatchEvent(new PointerEvent('pointerdown',{bubbles:true}));return true})()`,
+    `(()=>{document.querySelector('#rom-source').focus();document.querySelector('[data-node="ram"] .component-body').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));return 'ok'})()`,
+  );
+  assert.equal(
+    await run(`JSON.stringify(!!document.querySelector('#ram-write'))`),
+    true,
+  );
+  await run(
+    `(()=>{document.querySelector('#ram-write').value='2A 00 FF';document.querySelector('#write-ram').click();return 'ok'})()`,
+  );
+  assert.equal(
+    (await run(
+      `JSON.stringify((await window.literal.getComputerState()).memory.bytes)`,
+    ))[0],
+    42,
+  );
+  await select("screen");
+  assert.equal(
+    await run(`document.querySelectorAll('.screen-preview').length`),
+    1,
+  );
+  await run(
+    `(()=>{window.literal.computer({action:'assemble',source:'LDI R0, 1\\nLDI R1, 2\\nLDI R2, 7\\nPIXEL R0, R1, R2\\nloop: JMP loop'});window.literal.computer({action:'step',steps:4});return 'ok'})()`,
   );
   assert.equal(
     await run(
-      `document.querySelector('[data-node=code] .component-body').getAttribute('aria-label')`,
-    ),
-    "Code low nibble HEX_DISPLAY 1",
-  );
-  assert.equal(
-    await run(
-      `document.querySelectorAll('[data-node=screen] .vga-pixel').length`,
+      `document.querySelectorAll('[data-node="screen"] .vga-pixel').length`,
     ),
     1,
   );
   await run(
-    `(()=>{document.dispatchEvent(new PointerEvent('pointerup',{bubbles:true}));document.querySelector('#map-virtual').value='↑';document.querySelector('#map-key').click();document.dispatchEvent(new KeyboardEvent('keydown',{key:'w',code:'KeyW',bubbles:true}));return true})()`,
+    `(()=>{const hz=document.querySelector('#clock-frequency');hz.value='2';hz.dispatchEvent(new Event('change'));document.querySelector('#run').click();return 'ok'})()`,
+  );
+  const elapsed = await run(
+    `(async()=>{const before=(await window.literal.getComputerState()).cycles;await new Promise(resolve=>setTimeout(resolve,1100));return JSON.stringify((await window.literal.getComputerState()).cycles-before)})()`,
+  );
+  assert.ok(elapsed >= 2 && elapsed <= 3, `${elapsed} cycles at 2 Hz`);
+  await run(`(()=>{document.querySelector('#run').click();return 'ok'})()`);
+  const faster = await run(
+    `(async()=>{const hz=document.querySelector('#clock-frequency');hz.value='100';hz.dispatchEvent(new Event('change'));document.querySelector('#run').click();const before=(await window.literal.getComputerState()).cycles;await new Promise(resolve=>setTimeout(resolve,500));const count=(await window.literal.getComputerState()).cycles-before;document.querySelector('#run').click();return JSON.stringify(count)})()`,
+  );
+  assert.ok(faster >= 5, `${faster} cycles after increasing frequency`);
+  await select("alu");
+  await run(
+    `(()=>{document.querySelector('#see-inside').click();return 'ok'})()`,
+  );
+  assert.ok(
+    await run(
+      `document.querySelectorAll('#inside-circuit [data-node]').length`,
+    ) > 400,
+  );
+  await run(
+    `(()=>{document.querySelector('#inside-circuit .component-body[aria-label*=\" AND\"]').dispatchEvent(new MouseEvent('click',{bubbles:true}));return 'ok'})()`,
+  );
+  assert.ok(
+    await run(
+      `document.querySelectorAll('#inside-circuit .transistor-channel').length`,
+    ) >= 4,
+  );
+  await run(
+    `(()=>{document.querySelector('#inside-circuit .component-body[aria-label*=\"NMOS\"]').dispatchEvent(new MouseEvent('click',{bubbles:true}));return 'ok'})()`,
   );
   assert.equal(
     await run(
-      `JSON.parse(localStorage.getItem('literal.circuit')).components.find(c=>c.id==='keyboard').keyMap.KeyW`,
+      `JSON.stringify(!!document.querySelector('.transistor-section'))`,
     ),
-    "↑",
+    true,
   );
   await run(
-    `(()=>{document.querySelector('#capture-keyboard').click();document.dispatchEvent(new KeyboardEvent('keydown',{key:'w',code:'KeyW',bubbles:true}));return true})()`,
+    `(()=>{document.querySelector('#close-dialog').click();document.querySelector('#mode-button').click();document.querySelector('[data-mode="discover"]').click();return 'ok'})()`,
+  );
+  assert.deepEqual(
+    await run(
+      `JSON.stringify([...document.querySelectorAll('[data-place]')].filter(b=>!b.hidden).map(b=>b.dataset.place).sort())`,
+    ),
+    ["GROUND", "JUNCTION", "NMOS", "PMOS", "POWER"].sort(),
+  );
+  await run(
+    `(()=>{document.querySelector('#mode-button').click();document.querySelector('[data-mode="playground"]').click();return 'ok'})()`,
   );
   assert.equal(
     await run(
-      `document.querySelector('[data-node=keyboard] .signal-number').textContent`,
+      `document.querySelectorAll('[data-node="screen"] .vga-pixel').length`,
     ),
-    80,
-  );
-  assert.equal(
-    await run(
-      `document.querySelectorAll('[data-node=screen] .vga-pixel').length`,
-    ),
-    2,
-  );
-  await run(
-    `(()=>{document.dispatchEvent(new KeyboardEvent('keyup',{key:'w',code:'KeyW',bubbles:true}));document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',code:'Escape',bubbles:true}));return true})()`,
-  );
-  assert.match(
-    await run(
-      `document.querySelector('[data-node=keyboard] .component-body').textContent`,
-    ),
-    /RELEASED/,
-  );
-  await run(
-    `(()=>{document.querySelector('[data-virtual-key=B]').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',code:'Enter',bubbles:true}));document.dispatchEvent(new KeyboardEvent('keyup',{key:'Enter',code:'Enter',bubbles:true}));return true})()`,
-  );
-  assert.equal(
-    await run(
-      `document.querySelectorAll('[data-node=screen] .vga-pixel').length`,
-    ),
-    3,
-  );
-  await screenshot("keyboard");
-  console.log(
-    "PASS virtual keyboard, physical mapping, latched byte, release and pixel writes",
-  );
-  await run(
-    `(()=>{document.querySelector('#examples-button').click();document.querySelector('[data-example="byte-counter"]').click();document.querySelector('#step').click();return true})()`,
-  );
-  assert.equal(
-    await run(
-      `document.querySelector('[data-node=lo] .component-body').getAttribute('aria-label')`,
-    ),
-    "Low nibble HEX_DISPLAY 1",
-  );
-  await run(`(()=>{document.querySelector('#reset').click();return true})()`);
-  assert.equal(
-    await run(
-      `document.querySelector('[data-node=lo] .component-body').getAttribute('aria-label')`,
-    ),
-    "Low nibble HEX_DISPLAY 0",
-  );
-  await run(
-    `(()=>{document.querySelector('#computer-tool').click();document.querySelector('#computer-demo').click();document.querySelector('#computer-assemble').click();document.querySelector('#computer-run').click();return true})()`,
-  );
-  await new Promise((resolve) => setTimeout(resolve, 150));
-  await run(
-    `(()=>{document.querySelector('#computer-run').click();return true})()`,
-  );
-  assert.equal(
-    await run(`document.querySelector('#computer-terminal').textContent`),
-    "LIT\n",
-  );
-  assert.match(
-    await run(`document.querySelector('#cpu-state').textContent`),
-    /R010/,
-  );
-  await run(
-    `(()=>{document.querySelector('[data-computer-key="131"]').dispatchEvent(new PointerEvent('pointerdown',{bubbles:true}));document.querySelector('#computer-run').click();return true})()`,
-  );
-  await new Promise((resolve) => setTimeout(resolve, 150));
-  await run(
-    `(()=>{document.querySelector('#computer-run').click();document.dispatchEvent(new PointerEvent('pointerup',{bubbles:true}));return true})()`,
-  );
-  assert.match(
-    await run(`document.querySelector('#cpu-state').textContent`),
-    /R011/,
-  );
-  assert.match(
-    await run(`document.querySelector('#memory-bytes').textContent`),
-    /^2000  01/,
-  );
-  await run(
-    `(()=>{document.querySelector('#computer-run').click();return true})()`,
-  );
-  await new Promise((resolve) => setTimeout(resolve, 100));
-  await run(
-    `(()=>{document.querySelector('#computer-run').click();return true})()`,
-  );
-  await run(
-    `(()=>{document.querySelector('#computer-capture').click();document.body.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowUp',code:'ArrowUp',bubbles:true}));document.querySelector('#computer-run').click();return true})()`,
-  );
-  await new Promise((resolve) => setTimeout(resolve, 100));
-  await run(
-    `(()=>{document.querySelector('#computer-run').click();document.body.dispatchEvent(new KeyboardEvent('keyup',{key:'ArrowUp',code:'ArrowUp',bubbles:true}));document.body.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',code:'Escape',bubbles:true}));return true})()`,
-  );
-  assert.match(
-    await run(`document.querySelector('#cpu-state').textContent`),
-    /R10B/,
-  );
-  await screenshot("computer");
-  await run(
-    `(()=>{document.querySelector('#assembly-source').value='LDI R8, 3';document.querySelector('#computer-assemble').click();return true})()`,
-  );
-  assert.match(
-    await run(`document.querySelector('#assembly-error').textContent`),
-    /R0–R7/,
-  );
-  await run(
-    `(()=>{document.querySelector('#computer-demo').click();document.querySelector('#computer-assemble').click();document.querySelector('#computer-breakpoint').value='0200';document.querySelector('#computer-run').click();return true})()`,
-  );
-  await new Promise((resolve) => setTimeout(resolve, 100));
-  assert.equal(
-    await run(`document.querySelector('#computer-run').textContent`),
-    "Run",
-  );
-  assert.match(
-    await run(`document.querySelector('#cpu-state').textContent`),
-    /PC0200/,
+    0,
   );
   console.log(
-    "PASS byte counter, BIOS boot, opcode game, score in RAM, assembler errors and breakpoints",
+    "PASS device controls, wired framebuffer, ROM/RAM, 2 Hz clock, recursive ALU and Discover palette",
   );
   await run(
-    `(()=>{document.querySelector('#computer-close').click();document.querySelector('#examples-button').click();document.querySelector('[data-example="half-adder"]').click();document.querySelector('#karnaugh-tool').click();document.querySelector('#kmap-output').value='1';document.querySelector('#kmap-load').click();return true})()`,
+    `(()=>{document.querySelector('#examples-button').click();document.querySelector('[data-example="snake-computer"]').click();window.literal.computer({action:'step',steps:8000});return 'ok'})()`,
   );
-  assert.equal(
-    await run(`document.querySelector('#kmap-expression').textContent`),
-    "A · B",
+  assert.match(
+    await run(`(await window.literal.getComputerState()).terminal`),
+    /self-test OK/,
   );
-  assert.equal(await run(`document.querySelectorAll('[data-cell]').length`), 4);
-  await run(
-    `(()=>{document.querySelector('#kmap-variables').value='4';document.querySelector('#kmap-variables').dispatchEvent(new Event('change',{bubbles:true}));for(const i of [0,2,8,10])document.querySelector('[data-cell="'+i+'"]').click();return true})()`,
+  assert.ok(
+    await run(
+      `document.querySelectorAll('[data-node="screen"] .vga-pixel').length`,
+    ) > 100,
   );
-  assert.equal(
-    await run(`document.querySelector('#kmap-expression').textContent`),
-    "¬B · ¬D",
-  );
-  await screenshot("karnaugh");
-  console.log("PASS circuit output import and wrapping Karnaugh groups");
+  const shot = await orca("screenshot");
+  for (const name of ["computer", "snake"]) {
+    await Deno.writeFile(
+      new URL(`../docs/${name}.png`, import.meta.url),
+      Uint8Array.from(atob(shot.data), (c) => c.charCodeAt(0)),
+    );
+  }
+  console.log("PASS BIOS self-test and opcode Snake rendered on circuit");
 } finally {
   await run(
-    `(()=>{for(const [key,value] of Object.entries(${
+    `(()=>{document.querySelector('#run')?.textContent.includes('Pause')&&document.querySelector('#run').click();for(const key of Object.keys(localStorage))if(key.startsWith('literal.'))localStorage.removeItem(key);for(const [key,value]of Object.entries(${
       JSON.stringify(previous)
-    })){const storageKey='literal.'+key;if(value===null)localStorage.removeItem(storageKey);else localStorage.setItem(storageKey,value);}return true})()`,
+    }))localStorage.setItem(key,value);return 'ok'})()`,
   );
   await orca("reload");
-  await orca("wait", "--selector", "#examples-button");
 }

@@ -21,9 +21,12 @@ async function run(code: string) {
   }
 }
 const previous = await run(
-  `({circuit:localStorage.getItem('literal.circuit'),library:localStorage.getItem('literal.library'),assembly:localStorage.getItem('literal.assembly')})`,
+  `Object.fromEntries(Object.entries(localStorage).filter(([key])=>key.startsWith('literal.')))`,
 );
 try {
+  await run(
+    `(()=>{localStorage.setItem("literal.mode","playground");return true})()`,
+  );
   await orca("reload");
   await orca("wait", "--selector", "#examples-button");
   assert.equal(await run(`window.literal.version`), 1);
@@ -87,10 +90,6 @@ try {
   );
   assert.equal(after.memory.bytes[0], 42);
   assert.equal(after.halted, true);
-  assert.match(
-    await run(`document.querySelector('#cpu-state').textContent`),
-    /R02A/,
-  );
   assert.equal(
     (await run(`window.literal.minimizeLogic(['A','B'],[0,0,0,1])`)).expression,
     "A · B",
@@ -105,9 +104,9 @@ try {
   );
 } finally {
   await run(
-    `(()=>{for(const [key,value] of Object.entries(${
+    `(()=>{for(const key of Object.keys(localStorage))if(key.startsWith("literal."))localStorage.removeItem(key);for(const [key,value] of Object.entries(${
       JSON.stringify(previous)
-    })){const storageKey='literal.'+key;if(value===null)localStorage.removeItem(storageKey);else localStorage.setItem(storageKey,value);}return true})()`,
+    })){const storageKey=key;if(value===null)localStorage.removeItem(storageKey);else localStorage.setItem(storageKey,value);}return true})()`,
   );
   await orca("reload");
   await orca("wait", "--selector", "#examples-button");

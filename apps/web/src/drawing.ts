@@ -28,7 +28,9 @@ export function pin(
     : componentInputs(c, circuit);
   return {
     x: c.x +
-      (port < 0
+      (c.kind.startsWith("BUS_")
+        ? c.kind === "BUS_SCREEN" ? port < 0 ? 180 : -180 : port < 0 ? 80 : -80
+        : port < 0
         ? c.kind === "KEYBOARD" ? 110 : 50
         : c.kind === "VGA"
         ? -180
@@ -42,7 +44,7 @@ export function pin(
   };
 }
 export const signalClass = (s: Signal) =>
-  s === 1 ? "high" : s === 0 ? "low" : "unknown";
+  s === 1 ? "high" : s === 0 ? "low" : s === "Z" ? "floating" : "unknown";
 export function path(a: Point, b: Point, offset = 0): string {
   const middle = a.x <= b.x - 30
     ? Math.max(a.x + 20, Math.min(b.x - 20, (a.x + b.x) / 2 + offset))
@@ -58,7 +60,10 @@ export const dimensions = (
   c: Component,
   circuit: Circuit = { version: 1, name: "", components: [], wires: [] },
 ) =>
-  ["REGISTER8", "COUNTER8", "ADDER8", "RAM", "ROM"].includes(c.kind)
+  c.kind === "BUS_SCREEN"
+    ? { width: 400, height: 650, labelY: 327 }
+    : (c.kind.startsWith("BUS_") ||
+        ["REGISTER8", "COUNTER8", "ADDER8", "RAM", "ROM"].includes(c.kind))
     ? {
       width: 210,
       height:
@@ -108,10 +113,47 @@ function shape(
         : ""
     }`;
   }
+  if (["NMOS", "PMOS"].includes(kind)) {
+    const on = inputs[0] === (kind === "NMOS" ? 1 : 0);
+    return `<rect class="gate-shape" x="-42" y="-36" width="84" height="72" rx="8"/><path class="transistor-channel ${
+      on ? "conducting" : ""
+    }" d="M-28 0H-12 M-12-22V22 M-4-22V22 M-4-18H22V-28 M-4 18H22V28"/>${
+      kind === "PMOS"
+        ? '<circle cx="-18" cy="0" r="4" fill="white" stroke="currentColor"/>'
+        : ""
+    }<text class="display-pin-label" y="48">${kind} · ${
+      on ? "on" : "off"
+    }</text>`;
+  }
+  if (kind === "POWER" || kind === "GROUND") {
+    return `<rect class="gate-shape" x="-30" y="-25" width="60" height="50" rx="8"/><text class="signal-number" y="6">${
+      kind === "POWER" ? signal === 1 ? "VDD" : "0" : "GND"
+    }</text>`;
+  }
+  if (kind === "JUNCTION") {
+    return '<circle class="gate-shape" r="20"/><text class="signal-number" y="6">⊙</text>';
+  }
+  if (kind.startsWith("BUS_") && kind !== "BUS_SCREEN") {
+    const height = dimensions(c, circuit).height - 32;
+    const cpu = sim.memory.processors?.[c.id];
+    return `<rect class="gate-shape" x="-70" y="${
+      -height / 2
+    }" width="140" height="${height}" rx="12"/><text class="custom-title" y="-12">${
+      kind.slice(4)
+    }</text><text class="display-pin-label" y="14">${
+      cpu
+        ? `PC ${cpu.pc.toString(16).padStart(4, "0")}`
+        : kind === "BUS_ROM"
+        ? "8 KiB"
+        : kind === "BUS_RAM"
+        ? "52 KiB"
+        : "Memory bus"
+    }</text>`;
+  }
   if (["REGISTER8", "COUNTER8", "ADDER8", "RAM", "ROM"].includes(kind)) {
     const height = dimensions(c, circuit).height - 32;
     const bits = sim.outputValues[c.id] ?? [],
-      value = bits.slice(0, 8).includes("X")
+      value = bits.slice(0, 8).some((bit) => bit === "X" || bit === "Z")
         ? "XX"
         : bits.slice(0, 8).reduce<number>(
           (n, b, i) => n + (b === 1 ? 2 ** i : 0),
@@ -123,7 +165,7 @@ function shape(
       kind.replace("8", " 8")
     }</text><text class="signal-number" y="22">${value}</text>`;
   }
-  if (kind === "VGA") {
+  if (kind === "VGA" || kind === "BUS_SCREEN") {
     const pixels = sim.memory.screens?.[c.id] ?? [];
     return `<rect class="display-case" x="-136" y="-108" width="272" height="216" rx="10"/><rect fill="${
       screenColors[0]
@@ -270,7 +312,9 @@ export function draw(
           : sim.inputs[c.id]?.[i] ?? "X";
       return `<line class="pin-line ${signalClass(signal)}" x1="${
         i < 0
-          ? c.kind === "KEYBOARD"
+          ? c.kind === "BUS_SCREEN"
+            ? 136
+            : c.kind === "KEYBOARD"
             ? 80
             : (["NOT", "NAND", "NOR", "XNOR"].includes(c.kind)
               ? 44
@@ -278,7 +322,7 @@ export function draw(
                   .includes(c.kind)
               ? 40
               : 28)
-          : c.kind === "VGA"
+          : c.kind === "VGA" || c.kind === "BUS_SCREEN"
           ? -136
           : (["SEVEN_SEG", "HEX_DISPLAY"].includes(c.kind)
             ? -48
@@ -316,9 +360,11 @@ export function draw(
             "ROM",
           ].includes(
             c.kind,
-          )
+          ) || c.kind.startsWith("BUS_")
           ? `<text class="display-pin-label" x="${
-            c.kind === "VGA"
+            c.kind === "BUS_SCREEN"
+              ? i < 0 ? 158 : -165
+              : c.kind === "VGA"
               ? -165
               : c.kind === "KEYBOARD"
               ? 118
@@ -335,7 +381,7 @@ export function draw(
                 "ADDER8",
                 "RAM",
                 "ROM",
-              ].includes(c.kind)
+              ].includes(c.kind) || c.kind.startsWith("BUS_")
               ? esc((i < 0
                 ? componentOutputLabel(c, -i - 1, circuit)
                 : componentInputLabel(c, i, circuit)).slice(0, 9))

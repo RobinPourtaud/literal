@@ -224,7 +224,7 @@ export function agentTools(actions: LiteralActions): AgentTool[] {
     ),
     tool(
       "get_computer_state",
-      "Read the Literal 8 CPU registers, flags, terminal, framebuffer, current assembly and a bounded memory range. Returns initialized:false if the workspace has not been opened.",
+      "Read the Literal 8 CPU registers, flags, terminal, framebuffer, current assembly and a bounded memory range. Returns initialized:false if the circuit has no CPU.",
       object({ address: integer(0, 65535), length: integer(1, 256) }),
       true,
       (p) =>
@@ -236,7 +236,7 @@ export function agentTools(actions: LiteralActions): AgentTool[] {
     ),
     tool(
       "computer",
-      "Operate the independent Literal 8 CPU workspace: assemble source and reset, reset existing ROM, step a bounded number of instructions, or set keyboard code/pressed state. Pauses playback before changes. ISA is custom, not x86; it is independent of the gate canvas. Read state before editing. Returned data includes registers, screen and memory.",
+      "Operate the wired Literal 8 circuit on the canvas. Assemble creates a CPU, gate ALU, ROM, RAM, keyboard, screen and terminal circuit, replacing the current document. Reset, step instructions or set keyboard state. Mutations pause playback; state reads do not. The controller uses actual circuit wires and a custom ISA, not x86.",
       object({
         action: { type: "string", enum: ["assemble", "reset", "step", "key"] },
         source: text(200_000),

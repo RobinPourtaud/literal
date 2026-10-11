@@ -1,10 +1,12 @@
 import {
+  assemble,
   type Circuit,
   type Component,
   componentInputLabel,
   componentInputs,
   componentOutputLabel,
   componentOutputs,
+  computerCircuit,
   connect,
   createDefinition,
   type Definition,
@@ -18,7 +20,10 @@ import {
   type Kind,
   type Memory,
   parseCircuit,
+  screenColors,
+  screenWidth,
   simulate,
+  transistorCircuit,
   truthTable,
   virtualKeys,
 } from "@literal/core";
@@ -52,7 +57,7 @@ import robin from "./robin.svg?raw";
 import { blank, clone, examples } from "./examples.ts";
 import { dimensions, draw, esc, path, pin, type Point } from "./drawing.ts";
 import "./style.css";
-import { controlComputer, openComputer } from "./computer-ui.ts";
+
 import { createAgentAPI } from "./agent-api.ts";
 import { openKarnaugh } from "./karnaugh-ui.ts";
 const $ = <T extends Element = HTMLElement>(selector: string): T =>
@@ -99,6 +104,20 @@ try {
   storageWarning =
     "Saved circuit could not be loaded. You can open a circuit file instead.";
 }
+let mode: "discover" | "playground" =
+  localStorage.getItem("literal.mode") === "discover"
+    ? "discover"
+    : "playground";
+const discovered = new Set<string>();
+try {
+  const saved = JSON.parse(localStorage.getItem("literal.discovered") ?? "[]");
+  if (Array.isArray(saved)) {
+    saved.filter((id) => typeof id === "string").forEach((id) =>
+      discovered.add(id)
+    );
+  }
+} catch {}
+let pins = new Set<string>();
 let memory: Memory = { q: {}, clock: {} };
 let keyboards: Record<string, KeyboardState> = {};
 let capturedKeyboard: string | null = null;
@@ -115,6 +134,11 @@ let undo: Circuit[] = [],
   clipboard: Circuit | null = null;
 let camera = { x: 0, y: 0, zoom: 1 }, pointer: Point | null = null;
 let running: ReturnType<typeof setInterval> | null = null;
+let clockHz = Math.max(
+  0.1,
+  Math.min(10000, Number(localStorage.getItem("literal.clockHz")) || 500),
+);
+let clockCredit = 0, clockLast = 0, clockMeasuredAt = 0, clockEdges = 0;
 let space = false, pasted = 0, tab: "inspect" | "truth" = "inspect";
 let drag: {
   type: "nodes" | "pan" | "box";
@@ -156,6 +180,24 @@ function retainDefinitions() {
   }
 }
 const descriptions: Record<Kind, string> = {
+  NMOS:
+    "Conducts source to drain when Gate is 1; otherwise high impedance (Z).",
+  PMOS:
+    "Conducts source to drain when Gate is 0; otherwise high impedance (Z).",
+  POWER: "Ideal logic supply (1).",
+  GROUND: "Ideal ground (0).",
+  JUNCTION:
+    "Merge two electrical drivers. Z floats; conflicting drivers give X.",
+  BUS_CPU:
+    "Literal 8 instruction controller and registers. Uses the wired data bus and external ALU.",
+  BUS_ROM: "8 KiB boot ROM. 16-bit address bus. Edit assembly or hex bytes.",
+  BUS_RAM:
+    "52 KiB RAM. Address, data and write pins; non-selected addresses output zero.",
+  BUS_SCREEN:
+    "32 × 24 RGB framebuffer on F000–F2FF. Visible on the circuit; pin for a larger view.",
+  BUS_KEYBOARD:
+    "Addressed keyboard interface at FF00 / FF01. Pin to capture keys.",
+  BUS_TERMINAL: "ASCII output at FF03. Pin to read boot and program output.",
   INPUT: "Toggle a logic signal.",
   OUTPUT: "Show a signal value.",
   LED: "Light when the input is high. Amber means unknown.",
@@ -188,9 +230,24 @@ const descriptions: Record<Kind, string> = {
   CLOCK: "A clock you can step or run.",
   DFF: "Store data on the rising clock edge.",
   CUSTOM:
-    "A reusable combinational circuit. Pin names come from its Input and Output blocks.",
+    "A reusable gate or switch network. Pin names come from its Input and Output blocks.",
 };
 const groups: { name: string; kinds: Kind[] }[] = [
+  {
+    name: "ELECTRICITY",
+    kinds: ["POWER", "GROUND", "NMOS", "PMOS", "JUNCTION"],
+  },
+  {
+    name: "COMPUTER DEVICES",
+    kinds: [
+      "BUS_CPU",
+      "BUS_ROM",
+      "BUS_RAM",
+      "BUS_SCREEN",
+      "BUS_KEYBOARD",
+      "BUS_TERMINAL",
+    ],
+  },
   {
     name: "INPUT / OUTPUT",
     kinds: ["INPUT", "CLOCK", "KEYBOARD"],
@@ -211,7 +268,7 @@ const groups: { name: string; kinds: Kind[] }[] = [
 $("#app").innerHTML =
   `<header class="topbar"><a class="brand" href="#" aria-label="Literal home"><img src="/mark.svg" width="36" height="36" alt=""><strong>Literal</strong><span>logic circuits</span></a><nav><button id="library-toggle">${
     icon("PanelLeft")
-  }<span>Components</span></button><button id="computer-tool">Computer</button><button id="karnaugh-tool">Karnaugh</button><button id="help">Reference</button></nav><a class="source-link" href="https://github.com/RobinPourtaud/literal" target="_blank" rel="noopener">Source ${
+  }<span>Components</span></button><button id="mode-button">Playground</button><button id="karnaugh-tool">Karnaugh</button><button id="help">Reference</button></nav><a class="source-link" href="https://github.com/RobinPourtaud/literal" target="_blank" rel="noopener">Source ${
     icon("ArrowUpRight")
   }</a></header>
 <div class="shell"><aside class="library"><div class="library-scroll"><div class="sidebar-title">COMPONENTS <kbd>click to place</kbd></div><section class="custom-library"><h2>CUSTOM</h2><button id="create-custom">+ Create component</button><div id="custom-items"></div></section>${
@@ -222,6 +279,17 @@ $("#app").innerHTML =
             descriptions[k]
           }"><span class="gate-symbol">${
             ({
+              NMOS: "n",
+              PMOS: "p",
+              POWER: "+",
+              GROUND: "−",
+              JUNCTION: "⊙",
+              BUS_CPU: "C",
+              BUS_ROM: "R",
+              BUS_RAM: "M",
+              BUS_SCREEN: "▣",
+              BUS_KEYBOARD: "⌨",
+              BUS_TERMINAL: "T",
               INPUT: "↗",
               OUTPUT: "◉",
               LED: "●",
@@ -273,6 +341,8 @@ $("#app").innerHTML =
               ? "Clock"
               : k === "BUFFER"
               ? "Buffer"
+              : k.startsWith("BUS_")
+              ? k.slice(4)
               : k
           }<span class="place-plus">+</span></button>`
         ).join("")
@@ -301,7 +371,7 @@ $("#app").innerHTML =
     icon("StepForward")
   }<span>Step</span></button><button id="run" class="primary">${
     icon("Play")
-  }Run clock</button><button id="reset" class="icon-button" aria-label="Reset simulation" title="Reset clocks, registers, RAM, and screens">${
+  }Run clock</button><label class="clock-frequency">Clock <input id="clock-frequency" type="number" min="0.1" max="10000" step="0.1" value="${clockHz}" aria-label="Clock frequency in Hz"> Hz</label><output id="clock-measured" title="Measured clock frequency"></output><button id="reset" class="icon-button" aria-label="Reset simulation" title="Reset clocks, registers, RAM, and screens">${
     icon("RotateCcw")
   }</button></div></div>
 <div class="editor"><section class="board-panel" aria-label="Circuit editor"><div class="board-header"><div class="board-tools"><button id="place-center" hidden>Place at center</button><button id="select-tool" class="active" title="Select (V)">${
@@ -322,7 +392,7 @@ $("#app").innerHTML =
 <div class="board-wrap"><svg id="board" tabindex="0" aria-label="Circuit canvas. Click components to select, input blocks to toggle, and pins to connect. Space and drag to pan." xmlns="http://www.w3.org/2000/svg"><defs><pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse"><circle cx="0" cy="0" r="1" fill="#d9dfd0"/></pattern></defs><rect id="grid-background" fill="url(#grid)"/><g id="drawing"></g><g id="preview" aria-hidden="true"></g></svg><div id="empty" hidden><h2>Empty circuit</h2><p>Choose a component, then click the canvas.</p><button class="text-button" data-example="half-adder">Open half adder ${
     icon("ArrowUpRight")
   }</button></div></div><div class="canvas-footer"><span id="hint">Click an input to toggle it. Connect an output pin to an input pin.</span><span>20 px grid</span></div></section>
-<aside class="inspector"><div class="tabs" role="tablist" aria-label="Circuit details"><button id="inspect-tab" role="tab" aria-selected="true" aria-controls="details">Selection</button><button id="truth-tab" role="tab" aria-selected="false" aria-controls="details">Truth table</button></div><div id="details" role="tabpanel"></div></aside></div><footer class="statusbar"><span id="save-state"></span><span id="counts"></span><span id="simulation-state"></span><button id="details-toggle" title="Show or hide inspector">${
+<aside class="inspector"><div id="pinned-devices"></div><div class="tabs" role="tablist" aria-label="Circuit details"><button id="inspect-tab" role="tab" aria-selected="true" aria-controls="details">Selection</button><button id="truth-tab" role="tab" aria-selected="false" aria-controls="details">Truth table</button></div><div id="details" role="tabpanel"></div></aside></div><footer class="statusbar"><span id="save-state"></span><span id="counts"></span><span id="simulation-state"></span><button id="details-toggle" title="Show or hide inspector">${
     icon("PanelRight")
   }</button></footer></main></div>
 <input id="file-input" type="file" accept=".literal,.json,application/json" hidden><dialog id="dialog"><div class="dialog-heading"><h2 id="dialog-title"></h2><button id="close-dialog" class="icon-button" aria-label="Close dialog">${
@@ -337,7 +407,10 @@ function notify(message: string) {
 }
 function persist() {
   try {
-    localStorage.setItem("literal.circuit", JSON.stringify(circuit));
+    localStorage.setItem(
+      mode === "discover" ? "literal.discover.circuit" : "literal.circuit",
+      JSON.stringify(circuit),
+    );
     $("#save-state").textContent = "✓ Saved in this browser";
   } catch {
     $("#save-state").textContent =
@@ -362,6 +435,45 @@ function mutate(action: () => void) {
   persist();
   render();
 }
+function startClock() {
+  clockLast = clockMeasuredAt = performance.now();
+  clockCredit = clockEdges = 0;
+  running = setInterval(() => {
+    const now = performance.now();
+    clockCredit = Math.min(
+      clockCredit + (now - clockLast) * clockHz * 2 / 1000,
+      clockHz * 2,
+    );
+    clockLast = now;
+    const deadline = now + 12;
+    let changed = false;
+    while (clockCredit >= 1 && performance.now() < deadline) {
+      tick(false);
+      clockCredit--;
+      clockEdges++;
+      changed = true;
+      if (Object.values(memory.processors ?? {}).some((cpu) => cpu.halted)) {
+        stop();
+        break;
+      }
+    }
+    if (changed) render();
+    if (now - clockMeasuredAt >= 1000) {
+      $("#clock-measured").textContent = `${
+        (clockEdges * 500 / (now - clockMeasuredAt)).toFixed(1)
+      } Hz actual`;
+      clockMeasuredAt = now;
+      clockEdges = 0;
+    }
+  }, 16);
+}
+$("#clock-frequency").addEventListener("change", (event) => {
+  const input = event.target as HTMLInputElement;
+  clockHz = Math.max(0.1, Math.min(10000, Number(input.value) || 0.1));
+  input.value = String(clockHz);
+  clockCredit = 0;
+  localStorage.setItem("literal.clockHz", String(clockHz));
+});
 function stop() {
   if (running) clearInterval(running);
   running = null;
@@ -372,6 +484,11 @@ function load(next: Circuit) {
   capturedKeyboard = null;
   mappingKeyboard = null;
   keyboards = {};
+  pins = new Set(
+    next.components.filter((c) =>
+      ["BUS_SCREEN", "BUS_KEYBOARD", "BUS_TERMINAL"].includes(c.kind)
+    ).map((c) => c.id),
+  );
   const before = clone(circuit);
   circuit = clone(next);
   retainDefinitions();
@@ -493,7 +610,9 @@ function renderPreview() {
   }
 }
 function render() {
-  $("#custom-items").innerHTML = library.map((d) =>
+  $("#custom-items").innerHTML = library.filter((d) =>
+    mode !== "discover" || discovered.has(d.id)
+  ).map((d) =>
     `<div class="custom-library-row"><button class="palette-item ${
       placementDefinition === d.id && placement === "CUSTOM" ? "active" : ""
     }" data-custom="${d.id}" title="Place ${
@@ -505,6 +624,29 @@ function render() {
     }">${icon("Pencil")}</button></div>`
   ).join("");
 
+  $("#mode-button").textContent = mode === "discover"
+    ? "Discover"
+    : "Playground";
+  for (const button of document.querySelectorAll<HTMLElement>("[data-place]")) {
+    button.hidden = mode === "discover" &&
+      !["POWER", "GROUND", "NMOS", "PMOS", "JUNCTION"].includes(
+        button.dataset.place!,
+      );
+  }
+  for (
+    const group of document.querySelectorAll<HTMLElement>(".palette-group")
+  ) {
+    group.hidden = ![...group.querySelectorAll<HTMLElement>("[data-place]")]
+      .some((button) => !button.hidden);
+  }
+  $("#examples-button").hidden = mode === "discover";
+  $(".examples").hidden = mode === "discover";
+  document.querySelectorAll<HTMLElement>("[data-example]").forEach((button) =>
+    button.hidden = mode === "discover"
+  );
+  $("#karnaugh-tool").hidden = mode === "discover";
+  $("#pinned-devices").classList.toggle("has-selection", selected.size > 0);
+  renderPins();
   const active = document.activeElement as HTMLElement | null;
   const node = active?.closest<HTMLElement>(".component")?.dataset.node;
   const focusPin = active?.dataset.pin;
@@ -527,9 +669,11 @@ function render() {
   $("#counts").textContent =
     `${circuit.components.length} components · ${circuit.wires.length} wires`;
   $("#simulation-state").textContent = sim.warnings.length
-    ? "Feedback detected"
+    ? sim.warnings[0]
     : running
-    ? "Clock running · 2 Hz"
+    ? circuit.components.some((c) => c.kind === "BUS_CPU")
+      ? "Computer clock running"
+      : "Clock running · 2 Hz"
     : "Simulation live";
   $("#simulation-state").classList.toggle("warning", !!sim.warnings.length);
   $("#hint").textContent = wiring
@@ -565,10 +709,13 @@ function render() {
   }
 }
 function renderDetails() {
+  const selectionKey = `${tab}:${[...selected].sort().join(",")}`;
   if (
+    $("#details").dataset.selection === selectionKey &&
     $("#details").contains(document.activeElement) &&
-    document.activeElement?.matches("input")
+    document.activeElement?.matches("input,textarea,select")
   ) return;
+  $("#details").dataset.selection = selectionKey;
   $("#inspect-tab").setAttribute("aria-selected", String(tab === "inspect"));
   $("#truth-tab").setAttribute("aria-selected", String(tab === "truth"));
   if (tab === "truth") {
@@ -611,6 +758,8 @@ function renderDetails() {
         ? esc(definitionOf(c, circuit)?.name ?? "Custom")
         : c.kind === "DFF"
         ? "D flip-flop"
+        : c.kind.startsWith("BUS_")
+        ? c.kind.slice(4)
         : c.kind
     }</h2><span class="signal-badge ${sim.values[c.id] === 1 ? "on" : ""}">${
       c.kind === "HEX_DISPLAY"
@@ -623,26 +772,62 @@ function renderDetails() {
     }</p><label class="field">Label<input id="component-label" value="${
       esc(c.label)
     }" maxlength="80"></label><div class="position-fields"><label class="field">X<input id="component-x" type="number" step="20" value="${c.x}" min="-100000" max="100000"></label><label class="field">Y<input id="component-y" type="number" step="20" value="${c.y}" min="-100000" max="100000"></label></div>${
-      c.kind === "INPUT" || c.kind === "CLOCK"
+      c.kind === "INPUT" || c.kind === "CLOCK" || c.kind === "POWER"
         ? `<button id="toggle-value" class="wide-button">Toggle ${
           c.label ? esc(c.label) : "input"
         } · ${sim.values[c.id]} ${icon("ToggleRight")}</button>`
         : ""
     }${
-      c.kind === "KEYBOARD"
+      ["KEYBOARD", "BUS_KEYBOARD"].includes(c.kind)
         ? keyboardControls(c)
-        : c.kind === "VGA"
-        ? `<p class="muted">X0–4 / Y0–4 are little-endian coordinates. RGB is one bit per channel. Pulse Write from 0 to 1. Y 24–31 is ignored; Clear has priority.</p>`
+        : ["VGA", "BUS_SCREEN"].includes(c.kind)
+        ? `${
+          screenPreview(c)
+        }<p class="muted">X0–4 / Y0–4 are little-endian coordinates. RGB is one bit per channel. Pulse Write from 0 to 1. Y 24–31 is ignored; Clear has priority.</p>`
         : ""
     }${
-      c.kind === "ROM"
-        ? `<label class="field">ROM bytes (hex, up to 256)<textarea id="rom-bytes" rows="5">${
+      ["ROM", "BUS_ROM"].includes(c.kind)
+        ? `<label class="field">ROM bytes (hex)<textarea id="rom-bytes" rows="5">${
           (c.contents ?? []).map((b) => b.toString(16).padStart(2, "0")).join(
             " ",
           )
         }</textarea></label><button id="save-rom" class="wide-button">Load ROM bytes</button><p id="rom-error" role="alert"></p>`
         : ""
-    }<h3>Pins</h3><ul class="pin-list">${
+    }${
+      c.kind === "BUS_ROM"
+        ? `<label class="field">Assembly<textarea id="rom-source" rows="12" spellcheck="false">${
+          esc(c.source ?? "HALT")
+        }</textarea></label><button id="assemble-rom" class="wide-button">Assemble into ROM & reset circuit</button><p id="rom-assembly-error" role="alert"></p>`
+        : ""
+    }${
+      c.kind === "BUS_RAM"
+        ? '<label class="field">RAM address (hex)<input id="ram-address" value="2000" maxlength="4"></label><label class="field">Hex bytes<textarea id="ram-write" rows="2" placeholder="2A 00 FF"></textarea></label><button id="write-ram">Write RAM</button><p id="ram-error" role="alert"></p>'
+        : ""
+    }${
+      c.kind === "BUS_CPU"
+        ? `<h3>Registers</h3><pre class="memory-preview">PC ${
+          memory.processors?.[c.id]?.pc.toString(16).padStart(4, "0")
+        }\n${
+          memory.processors?.[c.id]?.registers.map((v, i) =>
+            `R${i} ${v.toString(16).padStart(2, "0")}`
+          ).join("  ")
+        }\n${esc(memory.processors?.[c.id]?.error ?? "")}</pre>`
+        : ""
+    }${
+      c.kind === "BUS_RAM" || c.kind === "RAM"
+        ? `<h3>Contents</h3><pre class="memory-preview">${
+          esc(JSON.stringify(
+            c.kind === "BUS_RAM"
+              ? memory.busRAM?.[c.id] ?? {}
+              : memory.ram?.[c.id] ?? [],
+            null,
+            2,
+          ))
+        }</pre>`
+        : ""
+    }<button id="see-inside" class="wide-button">See inside</button><button id="pin-component" class="wide-button">${
+      pins.has(c.id) ? "Unpin" : "Pin"
+    } to right panel</button><h3>Pins</h3><ul class="pin-list">${
       Array.from({ length: componentInputs(c, circuit) }, (_, i) => {
         const wire = circuit.wires.find((w) => w.to === c.id && w.port === i);
         const from = circuit.components.find((n) => n.id === wire?.from);
@@ -691,6 +876,20 @@ function renderDetails() {
       `<p class="diagnostic">${sim.warnings.map(esc).join("<br>")}</p>`,
     );
   }
+}
+function screenPreview(c: Component) {
+  const pixels = memory.screens?.[c.id] ?? [];
+  return `<svg class="screen-preview" viewBox="0 0 32 24" role="img" aria-label="Screen framebuffer"><rect width="32" height="24" fill="${
+    screenColors[0]
+  }"/>${
+    pixels.map((color, i) =>
+      color
+        ? `<rect x="${i % 32}" y="${
+          Math.floor(i / 32)
+        }" width="1" height="1" fill="${screenColors[color]}"/>`
+        : ""
+    ).join("")
+  }</svg>`;
 }
 function keyboardControls(c: Component) {
   const rows = ["1234567890", "QWERTYUIOP", "ASDFGHJKL", "ZXCVBNM"];
@@ -752,24 +951,28 @@ $("#details").addEventListener("click", (e) => {
   const target = e.target as Element;
   if (target.closest("#save-rom")) {
     const rom = circuit.components.find((c) =>
-      selected.has(c.id) && c.kind === "ROM"
+      selected.has(c.id) && ["ROM", "BUS_ROM"].includes(c.kind)
     );
     if (!rom) return;
     const tokens = $<HTMLTextAreaElement>("#rom-bytes").value.trim().split(
       /\s+/,
     ).filter(Boolean);
     if (
-      tokens.length > 256 || tokens.some((t) => !/^[0-9a-f]{1,2}$/i.test(t))
+      tokens.length > (rom.kind === "BUS_ROM" ? 8192 : 256) ||
+      tokens.some((t) => !/^[0-9a-f]{1,2}$/i.test(t))
     ) {
       $("#rom-error").textContent =
         "Use up to 256 hex bytes, separated by spaces.";
       return;
     }
-    mutate(() => rom.contents = tokens.map((t) => parseInt(t, 16)));
+    mutate(() => {
+      rom.contents = tokens.map((t) => parseInt(t, 16));
+      delete rom.source;
+    });
     return;
   }
   const c = circuit.components.find((c) =>
-    selected.has(c.id) && c.kind === "KEYBOARD"
+    selected.has(c.id) && ["KEYBOARD", "BUS_KEYBOARD"].includes(c.kind)
   );
   if (!c) return;
   if (target.closest("#capture-keyboard")) {
@@ -793,7 +996,7 @@ $("#details").addEventListener("click", (e) => {
     });
   }
 });
-$("#details").addEventListener("keydown", (e) => {
+$(".inspector").addEventListener("keydown", (e) => {
   const button = (e.target as Element).closest<HTMLElement>(
     "[data-virtual-key]",
   );
@@ -808,7 +1011,7 @@ $("#details").addEventListener("keydown", (e) => {
     );
   }
 });
-$("#details").addEventListener("pointerdown", (e) => {
+$(".inspector").addEventListener("pointerdown", (e) => {
   const button = (e.target as Element).closest<HTMLElement>(
     "[data-virtual-key]",
   );
@@ -820,7 +1023,10 @@ $("#details").addEventListener("pointerdown", (e) => {
 document.addEventListener("pointerup", () => {
   if (heldKeys.has("virtual")) {
     for (const c of circuit.components) {
-      if (c.kind === "KEYBOARD" && keyboards[c.id]?.pressed) {
+      if (
+        ["KEYBOARD", "BUS_KEYBOARD"].includes(c.kind) &&
+        keyboards[c.id]?.pressed
+      ) {
         releaseKey(c.id, "virtual");
       }
     }
@@ -886,16 +1092,18 @@ function duplicateSelection() {
   copySelection();
   pasteSelection();
 }
-function tick() {
+function tick(update = true) {
   for (const c of circuit.components) {
     if (c.kind === "CLOCK") c.value = c.value === 1 ? 0 : 1;
   }
   evaluate();
-  persist();
-  render();
+  if (update) {
+    persist();
+    render();
+  }
 }
 function toggle(c: Component) {
-  mutate(() => c.value = c.value === 1 ? 0 : 1);
+  mutate(() => c.value = sim.values[c.id] === 1 ? 0 : 1);
 }
 function connectPin(id: string, port: number) {
   placement = null;
@@ -1035,6 +1243,7 @@ $("#app").addEventListener("click", (e) => {
           ).join("")
         }</div>`,
       ),
+    "mode-button": chooseMode,
     new: () => load(blank()),
     open: () => $<HTMLInputElement>("#file-input").click(),
     save: () =>
@@ -1052,19 +1261,11 @@ $("#app").addEventListener("click", (e) => {
       });
     },
     "name-button": rename,
-    step: tick,
+    step: () => tick(),
     run: () => {
       if (running) stop();
-      else running = setInterval(tick, 250);
+      else startClock();
       render();
-    },
-    "computer-tool": () => {
-      stop();
-      releaseKeyboard();
-      capturedKeyboard = null;
-      evaluate();
-      render();
-      openComputer();
     },
     "karnaugh-tool": () => {
       stop();
@@ -1273,6 +1474,13 @@ $("#dialog-body").addEventListener("submit", (e) => {
     mutate(() => {
       circuit.definitions = [...(circuit.definitions ?? []), def];
     });
+    if (mode === "discover") {
+      discovered.add(def.id);
+      localStorage.setItem(
+        "literal.discovered",
+        JSON.stringify([...discovered]),
+      );
+    }
     retainDefinitions();
     $<HTMLDialogElement>("#dialog").close();
     placement = "CUSTOM";
@@ -1394,7 +1602,9 @@ function endDrag(e: PointerEvent, cancel = false) {
       persist();
     } else if (!d.additive && d.positions.size === 1) {
       const c = circuit.components.find((c) => d.positions.has(c.id));
-      if (c && (c.kind === "INPUT" || c.kind === "CLOCK")) {
+      if (
+        c && (c.kind === "INPUT" || c.kind === "CLOCK" || c.kind === "POWER")
+      ) {
         toggle(c);
         return;
       }
@@ -1438,8 +1648,9 @@ board.addEventListener("keydown", (e) => {
     const id = (target.closest(".component") as HTMLElement).dataset.node!;
     selected = new Set([id]);
     const c = circuit.components.find((c) => c.id === id)!;
-    if (c.kind === "INPUT" || c.kind === "CLOCK") toggle(c);
-    else render();
+    if (c.kind === "INPUT" || c.kind === "CLOCK" || c.kind === "POWER") {
+      toggle(c);
+    } else render();
   }
 });
 document.addEventListener("keydown", (e) => {
@@ -1528,7 +1739,10 @@ document.addEventListener("keydown", (e) => {
 document.addEventListener("keyup", (e) => {
   if (heldKeys.has("virtual") && ["Enter", " "].includes(e.key)) {
     for (const c of circuit.components) {
-      if (c.kind === "KEYBOARD" && keyboards[c.id]?.pressed) {
+      if (
+        ["KEYBOARD", "BUS_KEYBOARD"].includes(c.kind) &&
+        keyboards[c.id]?.pressed
+      ) {
         releaseKey(c.id, "virtual");
       }
     }
@@ -1558,8 +1772,13 @@ document.addEventListener("visibilitychange", () => {
   }
 });
 retainDefinitions();
+pins = new Set(
+  circuit.components.filter((c) =>
+    ["BUS_SCREEN", "BUS_KEYBOARD", "BUS_TERMINAL"].includes(c.kind)
+  ).map((c) => c.id),
+);
 new ResizeObserver(view).observe(board);
-persist();
+if (mode === "playground") persist();
 render();
 requestAnimationFrame(fit);
 if (storageWarning) notify(storageWarning);
@@ -1599,7 +1818,7 @@ window.literal = createAgentAPI({
       circuit.components.find((c) => c.id === id)
     );
     if (
-      nodes.some((c) => !c || !["INPUT", "CLOCK"].includes(c.kind))
+      nodes.some((c) => !c || !["INPUT", "CLOCK", "POWER"].includes(c.kind))
     ) throw Error("Each id must identify an Input or Clock component.");
     if (
       new Set(values.map((v) => v.id)).size !== values.length
@@ -1640,6 +1859,13 @@ window.literal = createAgentAPI({
       shape: options.shape,
     });
     mutate(() => circuit.definitions = [...(circuit.definitions ?? []), def]);
+    if (mode === "discover") {
+      discovered.add(def.id);
+      localStorage.setItem(
+        "literal.discovered",
+        JSON.stringify([...discovered]),
+      );
+    }
     retainDefinitions();
     render();
     return clone(def);
@@ -1648,14 +1874,394 @@ window.literal = createAgentAPI({
     history(direction);
     return state();
   },
-  computer: (input) => {
-    if (input.action !== "state") {
-      stop();
-      releaseKeyboard();
-      capturedKeyboard = null;
-      evaluate();
-      render();
-    }
-    return controlComputer(input);
-  },
+  computer: circuitComputerAPI,
 });
+
+function advanceComputer(steps: number) {
+  for (let i = 0; i < steps; i++) {
+    for (const clock of circuit.components.filter((c) => c.kind === "CLOCK")) {
+      clock.value = 0;
+    }
+    evaluate();
+    for (const clock of circuit.components.filter((c) => c.kind === "CLOCK")) {
+      clock.value = 1;
+    }
+    evaluate();
+    if (Object.values(memory.processors ?? {}).some((cpu) => cpu.halted)) {
+      stop();
+      break;
+    }
+  }
+  render();
+}
+function circuitComputerAPI(input: import("./agent-api.ts").ComputerInput) {
+  if (input.action !== "state") stop();
+  if (input.action === "assemble") load(computerCircuit(input.source!));
+  let cpu = circuit.components.find((c) => c.kind === "BUS_CPU");
+  if (!cpu && input.action === "state") return { initialized: false };
+  if (!cpu) {
+    load(computerCircuit());
+    cpu = circuit.components.find((c) => c.kind === "BUS_CPU")!;
+  }
+  if (input.action === "reset") {
+    memory = { q: {}, clock: {} };
+    for (const c of circuit.components) if (c.kind === "CLOCK") c.value = 0;
+    evaluate();
+  }
+  if (input.action === "step") advanceComputer(input.steps ?? 1);
+  if (input.action === "key") {
+    const keyboard = circuit.components.find((c) => c.kind === "BUS_KEYBOARD");
+    if (keyboard) {
+      keyboards[keyboard.id] = { code: input.code!, pressed: input.pressed! };
+    }
+    evaluate();
+  }
+  render();
+  const state = memory.processors![cpu.id],
+    address = input.address ?? 0x2000,
+    length = input.length ?? 64;
+  const ram = circuit.components.find((c) => c.kind === "BUS_RAM"),
+    rom = circuit.components.find((c) => c.kind === "BUS_ROM"),
+    screen = circuit.components.find((c) => c.kind === "BUS_SCREEN"),
+    keyboard = circuit.components.find((c) => c.kind === "BUS_KEYBOARD");
+  return {
+    initialized: true,
+    source: rom?.source ?? "",
+    ...state,
+    running: running !== null,
+    keyboard: keyboard
+      ? keyboards[keyboard.id] ?? { code: 0, pressed: false }
+      : null,
+    terminal: Object.values(memory.terminals ?? {}).join(""),
+    framebuffer: screen ? memory.screens?.[screen.id] ?? [] : [],
+    memory: {
+      address,
+      bytes: Array.from(
+        { length: Math.min(length, 65536 - address) },
+        (_, i) =>
+          address + i < 0x2000
+            ? rom?.contents?.[address + i] ?? 0
+            : address + i < 0xf000
+            ? ram ? memory.busRAM?.[ram.id]?.[address + i] ?? 0 : 0
+            : screen
+            ? memory.screens?.[screen.id]?.[address + i - 0xf000] ?? 0
+            : 0,
+      ),
+    },
+  };
+}
+function renderPins() {
+  const target = $("#pinned-devices");
+  if (
+    target.contains(document.activeElement) &&
+    document.activeElement?.matches("input,textarea")
+  ) return;
+  const keyboard = circuit.components.find((c) => c.kind === "BUS_KEYBOARD");
+  target.innerHTML = [...pins].flatMap((id) => {
+    const c = circuit.components.find((c) => c.id === id);
+    if (!c) {
+      pins.delete(id);
+      return [];
+    }
+    const heading = `<div class="pinned-heading"><button data-inspect="${id}">${
+      esc(c.label)
+    }</button><button data-unpin="${id}" aria-label="Unpin ${
+      esc(c.label)
+    }">×</button></div>`;
+    if (c.kind === "BUS_SCREEN" || c.kind === "VGA") {
+      return `<section class="pinned-card">${heading}<canvas data-pinned-screen="${id}" width="32" height="24" aria-label="${
+        esc(c.label)
+      } framebuffer"></canvas>${
+        keyboard
+          ? `<div class="key-row">${
+            ["↑", "←", "↓", "→", "R"].map((key) =>
+              `<button data-virtual-key="${key}" data-keyboard="${keyboard.id}">${key}</button>`
+            ).join("")
+          }</div>`
+          : ""
+      }</section>`;
+    }
+    if (["KEYBOARD", "BUS_KEYBOARD"].includes(c.kind)) {
+      return `<section class="pinned-card">${heading}<button data-capture-keyboard="${id}" aria-pressed="${
+        capturedKeyboard === id
+      }">${
+        capturedKeyboard === id
+          ? "Keyboard captured · Esc releases"
+          : "Capture keyboard"
+      }</button><p class="muted">Key ${keyboards[id]?.code ?? 0} · ${
+        keyboards[id]?.pressed ? "pressed" : "released"
+      }</p></section>`;
+    }
+    if (c.kind === "BUS_TERMINAL") {
+      return `<section class="pinned-card">${heading}<pre>${
+        esc(memory.terminals?.[id] ?? "Terminal · waiting for output")
+      }</pre></section>`;
+    }
+    if (c.kind === "BUS_CPU") {
+      const cpu = memory.processors?.[id];
+      return `<section class="pinned-card">${heading}<pre>PC ${
+        cpu?.pc.toString(16).padStart(4, "0")
+      } · ${cpu?.halted ? "Halted" : "Running"}\n${
+        cpu?.registers.map((v, i) => `R${i} ${v.toString(16).padStart(2, "0")}`)
+          .join("  ")
+      }\n${esc(cpu?.error ?? "")}</pre></section>`;
+    }
+    if (["ROM", "BUS_ROM", "RAM", "BUS_RAM"].includes(c.kind)) {
+      return `<section class="pinned-card">${heading}<pre>${
+        c.kind.includes("ROM")
+          ? (c.contents ?? []).slice(0, 32).map((v) =>
+            v.toString(16).padStart(2, "0")
+          ).join(" ")
+          : Object.entries(memory.busRAM?.[id] ?? {}).slice(0, 24).map((
+            [at, v],
+          ) => `${Number(at).toString(16)}: ${v.toString(16).padStart(2, "0")}`)
+            .join("\n") || "RAM · all bytes zero"
+      }</pre><button data-inspect="${id}">Inspect / edit memory</button></section>`;
+    }
+    return `<section class="pinned-card">${heading}<p>${esc(c.kind)} · ${
+      sim.values[id]
+    }</p></section>`;
+  }).join("");
+  for (
+    const canvas of target.querySelectorAll<HTMLCanvasElement>(
+      "[data-pinned-screen]",
+    )
+  ) {
+    const ctx = canvas.getContext("2d")!;
+    (memory.screens?.[canvas.dataset.pinnedScreen!] ?? Array(768).fill(0))
+      .forEach((color, i) => {
+        ctx.fillStyle = screenColors[color];
+        ctx.fillRect(i % screenWidth, Math.floor(i / screenWidth), 1, 1);
+      });
+  }
+}
+$(".inspector").addEventListener("click", (event) => {
+  const target = (event.target as Element).closest<HTMLElement>("button");
+  if (!target) return;
+  const c = circuit.components.find((c) => selected.has(c.id));
+  if (target.id === "pin-component" && c) {
+    if (pins.has(c.id)) pins.delete(c.id);
+    else pins.add(c.id);
+    render();
+  }
+  if (target.dataset.unpin) {
+    pins.delete(target.dataset.unpin);
+    render();
+  }
+  if (target.dataset.inspect) {
+    selected = new Set([target.dataset.inspect]);
+    tab = "inspect";
+    render();
+  }
+  if (target.dataset.captureKeyboard) {
+    releaseKeyboard();
+    capturedKeyboard = capturedKeyboard === target.dataset.captureKeyboard
+      ? null
+      : target.dataset.captureKeyboard;
+    render();
+  }
+  if (target.id === "see-inside" && c) openInside(c);
+  if (target.id === "write-ram" && c) {
+    const address = parseInt($<HTMLInputElement>("#ram-address").value, 16),
+      text = $<HTMLTextAreaElement>("#ram-write").value.trim(),
+      bytes = text.split(/\s+/);
+    if (
+      !text || !Number.isInteger(address) || address < 0x2000 ||
+      address + bytes.length > 0xf000 || bytes.length > 256 || bytes.some((v) =>
+        !/^[0-9a-f]{2}$/i.test(v)
+      )
+    ) {
+      $("#ram-error").textContent =
+        "Use two-digit hex bytes and an address in 2000–EFFF.";
+      return;
+    }
+    stop();
+    memory.busRAM ??= {};
+    memory.busRAM[c.id] = { ...(memory.busRAM[c.id] ?? {}) };
+    bytes.forEach((v, i) =>
+      memory.busRAM![c.id][address + i] = parseInt(v, 16)
+    );
+    evaluate();
+    render();
+  }
+  if (target.id === "assemble-rom" && c) {
+    try {
+      const text = $<HTMLTextAreaElement>("#rom-source").value;
+      const result = assemble(text);
+      stop();
+      mutate(() => {
+        c.contents = [...result.rom];
+        c.source = text;
+        memory = { q: {}, clock: {} };
+        for (const node of circuit.components) {
+          if (node.kind === "CLOCK") node.value = 0;
+        }
+      });
+    } catch (error) {
+      $("#rom-assembly-error").textContent = (error as Error).message;
+    }
+  }
+});
+
+type InsidePage = {
+  circuit: Circuit;
+  simulation: ReturnType<typeof simulate>;
+  label: string;
+};
+let insidePages: InsidePage[] = [];
+function insideOf(
+  c: Component,
+  parent: Circuit,
+  simulation: ReturnType<typeof simulate>,
+): Circuit | null {
+  const definition = definitionOf(c, parent);
+  if (definition) {
+    return {
+      version: 1,
+      name: definition.name,
+      components: clone(definition.components),
+      wires: clone(definition.wires),
+      definitions: parent.definitions,
+    };
+  }
+  return transistorCircuit(c.kind);
+}
+function openInside(c: Component) {
+  stop();
+  insidePages = [];
+  navigateInside(c, circuit, sim);
+  $<HTMLDialogElement>("#dialog").showModal();
+}
+function navigateInside(
+  c: Component,
+  parent: Circuit,
+  simulation: ReturnType<typeof simulate>,
+) {
+  const next = insideOf(c, parent, simulation);
+  $("#dialog-title").textContent = `Inside ${c.label}`;
+  if (!next) {
+    const mos = ["NMOS", "PMOS"].includes(c.kind);
+    const ports = simulation.inputs[c.id] ?? [];
+    const structural = mos
+      ? `<svg class="transistor-section" viewBox="0 0 440 220" role="img" aria-label="${c.kind} source, insulated gate, drain and substrate"><rect x="20" y="100" width="400" height="90" rx="8" fill="#e9eee1" stroke="#809473"/><rect x="45" y="100" width="85" height="55" fill="#c5d6b8"/><rect x="310" y="100" width="85" height="55" fill="#c5d6b8"/><rect x="145" y="80" width="150" height="12" fill="#d7d2bf"/><rect x="145" y="48" width="150" height="30" rx="4" fill="#809473"/><path d="M88 100V35 M352 100V35 M220 48V20" fill="none" stroke="#527d3c" stroke-width="3"/><text x="35" y="25">Source: ${
+        ports[1] ?? "X"
+      }</text><text x="170" y="15">Gate: ${
+        ports[0] ?? "X"
+      }</text><text x="310" y="25">Drain: ${
+        simulation.values[c.id] ?? "X"
+      }</text><text x="155" y="180">${
+        c.kind === "NMOS" ? "p substrate · n+ contacts" : "n well · p+ contacts"
+      }</text><text x="155" y="215">Insulated gate / oxide</text></svg>`
+      : "";
+    $("#dialog-body").innerHTML = `${
+      insidePages.length ? '<button id="inside-back">← Back</button>' : ""
+    }<h3>${esc(c.kind)}</h3>${structural}<p>${
+      esc(descriptions[c.kind])
+    }</p><p class="muted">${
+      ["NMOS", "PMOS"].includes(c.kind)
+        ? "Gate controls the conductive channel between source and drain. This is a logic switch model: Z means high impedance. It does not model analog voltage, current, capacitance, or transistor physics."
+        : ["POWER", "GROUND", "INPUT", "OUTPUT", "JUNCTION"].includes(c.kind)
+        ? "Electrical primitive. There is no lower component definition."
+        : "This component is currently a behavioral device model. A gate or transistor implementation is not available yet."
+    }</p>`;
+    return;
+  }
+  const inputs = next.components.filter((n) => n.kind === "INPUT");
+  inputs.forEach((n, i) => {
+    const bit = simulation.inputs[c.id]?.[i];
+    n.value = bit === 1 ? 1 : 0;
+  });
+  const overrides = Object.fromEntries(
+    inputs.map((n, i) => [n.id, simulation.inputs[c.id]?.[i] ?? n.value ?? 0]),
+  );
+  insidePages.push({
+    circuit: next,
+    simulation: simulate(next, simulation.memory.nested?.[c.id], overrides),
+    label: c.label,
+  });
+  paintInside();
+}
+function paintInside() {
+  const page = insidePages.at(-1);
+  if (!page) return;
+  const dims = page.circuit.components.map((c) => ({
+    c,
+    size: dimensions(c, page.circuit),
+  }));
+  const left = Math.min(...dims.map(({ c, size }) => c.x - size.width / 2)) -
+      30,
+    top = Math.min(...dims.map(({ c, size }) => c.y - size.height / 2)) - 30;
+  const width = Math.max(...dims.map(({ c, size }) => c.x + size.width / 2)) -
+      left + 30,
+    height = Math.max(...dims.map(({ c, size }) => c.y + size.height / 2)) -
+      top + 30;
+  $("#dialog-title").textContent = "Component internals";
+  $("#dialog-body").innerHTML = `<div class="inside-breadcrumbs">${
+    insidePages.map((p, i) =>
+      `<button data-inside-level="${i}">${esc(p.label)}</button>`
+    ).join(" → ")
+  }</div><p class="muted">Click a component to go deeper. Gates use CMOS switch networks. Z is high impedance.</p><div class="inside-scroll"><svg id="inside-circuit" viewBox="${left} ${top} ${width} ${height}" style="width:${width}px;height:${height}px">${
+    draw(page.circuit, page.simulation, new Set(), null)
+  }</svg></div><button id="inside-open-circuit">Open this circuit in playground</button>`;
+}
+$("#dialog-body").addEventListener("click", (event) => {
+  const target = (event.target as Element).closest<HTMLElement>(
+    "[data-inside-level],[data-node],#inside-back,#inside-open-circuit",
+  );
+  if (!target) return;
+  if (target.dataset.insideLevel !== undefined) {
+    insidePages = insidePages.slice(0, Number(target.dataset.insideLevel) + 1);
+    paintInside();
+    return;
+  }
+  if (target.id === "inside-back") {
+    paintInside();
+    return;
+  }
+  if (target.id === "inside-open-circuit") {
+    const page = insidePages.at(-1);
+    if (page) {
+      $<HTMLDialogElement>("#dialog").close();
+      load(page.circuit);
+    }
+    return;
+  }
+  const page = insidePages.at(-1),
+    c = page?.circuit.components.find((c) => c.id === target.dataset.node);
+  if (page && c) navigateInside(c, page.circuit, page.simulation);
+});
+function chooseMode() {
+  dialog(
+    "Choose a mode",
+    `<div class="mode-choices"><button data-mode="discover"><strong>Discover</strong><span>Start with transistors and electricity. Build and save your own components.</span></button><button data-mode="playground"><strong>Playground</strong><span>All components, examples, and wired computers available.</span></button></div>`,
+  );
+}
+$("#dialog-body").addEventListener("click", (event) => {
+  const button = (event.target as Element).closest<HTMLElement>("[data-mode]");
+  if (!button) return;
+  persist();
+  mode = button.dataset.mode as typeof mode;
+  localStorage.setItem("literal.mode", mode);
+  const saved = localStorage.getItem(
+    mode === "discover" ? "literal.discover.circuit" : "literal.circuit",
+  );
+  let next = blank();
+  if (saved) {
+    try {
+      next = parseCircuit(saved);
+    } catch {}
+  }
+  load(next);
+  $<HTMLDialogElement>("#dialog").close();
+});
+if (mode === "discover") {
+  const saved = localStorage.getItem("literal.discover.circuit");
+  let next = blank();
+  if (saved) {
+    try {
+      next = parseCircuit(saved);
+    } catch {}
+  }
+  load(next);
+}
+if (!localStorage.getItem("literal.mode")) chooseMode();

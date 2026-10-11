@@ -1,3 +1,4 @@
+import { type ALUOperation, evaluateALU } from "./alu.ts";
 import {
   type KeyboardState,
   screenHeight,
@@ -148,11 +149,52 @@ export function assemble(source: string): Assembly {
   });
   return { rom, labels, listing };
 }
+export type ComputerDevice = "ROM" | "RAM" | "Screen" | "Keyboard" | "Terminal";
+export interface BusTransfer {
+  device: ComputerDevice;
+  address: number;
+  value: number;
+  write: boolean;
+}
+const deviceAt = (address: number): ComputerDevice | null =>
+  address < 0x2000
+    ? "ROM"
+    : address < 0xf000
+    ? "RAM"
+    : address < 0xf300 || address === 0xff02
+    ? "Screen"
+    : address === 0xff00 || address === 0xff01
+    ? "Keyboard"
+    : address === 0xff03
+    ? "Terminal"
+    : null;
 export class Computer {
   readonly registers = new Uint8Array(8);
   readonly ram = new Uint8Array(0xd000);
   readonly framebuffer = new Uint8Array(screenWidth * screenHeight);
   readonly rom: Uint8Array;
+  readonly connected = new Set<ComputerDevice>([
+    "ROM",
+    "RAM",
+    "Screen",
+    "Keyboard",
+    "Terminal",
+  ]);
+  readonly transfers: BusTransfer[] = [];
+  readonly activity = new Map<
+    ComputerDevice,
+    { reads: number; writes: number; last: BusTransfer }
+  >();
+  lastALU: {
+    operation: ALUOperation;
+    a: number;
+    b: number;
+    value: number;
+    carry: boolean;
+    zero: boolean;
+    values: Uint8Array;
+  } | null = null;
+  evaluate = evaluateALU;
   pc = 0;
   sp = 0xefff;
   zero = false;
@@ -178,11 +220,32 @@ export class Computer {
     if (address === 0xff01) return this.keyboard.pressed ? 1 : 0;
     return 0;
   }
+  private transfer(address: number, value: number, write: boolean) {
+    const device = deviceAt(address);
+    if (!device) return;
+    if (!this.connected.has(device)) {
+      throw Error(`${device} is disconnected from the bus.`);
+    }
+    const last = { device, address, value, write };
+    const activity = this.activity.get(device) ?? { reads: 0, writes: 0, last };
+    if (write) activity.writes++;
+    else activity.reads++;
+    activity.last = last;
+    this.activity.set(device, activity);
+    this.transfers.push(last);
+    if (this.transfers.length > 32) this.transfers.shift();
+  }
+  private busRead(address: number) {
+    const value = this.read(address);
+    this.transfer(address, value, false);
+    return value;
+  }
   write(address: number, value: number) {
     if (!Number.isInteger(address) || address < 0 || address > 65535) {
       throw Error("Invalid memory address.");
     }
     const byte = value & 255;
+    this.transfer(address, byte, true);
     if (address < 0x2000) throw Error("Cannot write to ROM.");
     if (address < 0xf000) this.ram[address - 0x2000] = byte;
     else if (address < 0xf300) this.framebuffer[address - 0xf000] = byte & 7;
@@ -197,14 +260,14 @@ export class Computer {
   }
   private pop() {
     if (this.sp >= 0xefff) throw Error("Stack underflow.");
-    return this.read(++this.sp);
+    return this.busRead(++this.sp);
   }
   step() {
     if (this.halted) return;
     try {
       const fetch = () => {
         if (this.pc >= 0x2000) throw Error("Execution left ROM.");
-        return this.rom[this.pc++];
+        return this.busRead(this.pc++);
       };
       const code = fetch(), op = instructionSet.find((o) => o.code === code);
       if (!op) throw Error(`Unknown opcode ${code.toString(16)}.`);
@@ -214,10 +277,17 @@ export class Computer {
         return type === "a" ? n | (fetch() << 8) : n;
       });
       const [a, b, c] = args, r = this.registers;
-      const result = (n: number) => {
-        this.carry = n > 255 || n < 0;
-        r[a] = n & 255;
-        this.zero = r[a] === 0;
+      const calculate = (
+        operation: ALUOperation,
+        x: number,
+        y: number,
+        store = true,
+      ) => {
+        const result = this.evaluate(operation, x, y);
+        this.lastALU = { operation, a: x, b: y, ...result };
+        this.carry = result.carry;
+        this.zero = result.zero;
+        if (store) r[a] = result.value;
       };
       switch (op.name) {
         case "NOP":
@@ -229,7 +299,7 @@ export class Computer {
           r[a] = b;
           break;
         case "LD":
-          r[a] = this.read(b);
+          r[a] = this.busRead(b);
           break;
         case "ST":
           this.write(b, r[a]);
@@ -238,45 +308,40 @@ export class Computer {
           r[a] = r[b];
           break;
         case "ADD":
-          result(r[a] + r[b]);
+          calculate("ADD", r[a], r[b]);
           break;
         case "SUB":
-          result(r[a] - r[b]);
+          calculate("SUB", r[a], r[b]);
           break;
         case "AND":
-          result(r[a] & r[b]);
+          calculate("AND", r[a], r[b]);
           break;
         case "OR":
-          result(r[a] | r[b]);
+          calculate("OR", r[a], r[b]);
           break;
         case "XOR":
-          result(r[a] ^ r[b]);
+          calculate("XOR", r[a], r[b]);
           break;
         case "ADDI":
-          result(r[a] + b);
+          calculate("ADD", r[a], b);
           break;
         case "SUBI":
-          result(r[a] - b);
+          calculate("SUB", r[a], b);
           break;
         case "ANDI":
-          result(r[a] & b);
+          calculate("AND", r[a], b);
           break;
         case "SHL":
-          result(r[a] << 1);
+          calculate("SHL", r[a], 0);
           break;
-        case "SHR": {
-          const low = r[a] & 1;
-          result(r[a] >> 1);
-          this.carry = !!low;
+        case "SHR":
+          calculate("SHR", r[a], 0);
           break;
-        }
         case "CMP":
-          this.zero = r[a] === r[b];
-          this.carry = r[a] < r[b];
+          calculate("SUB", r[a], r[b], false);
           break;
         case "CMPI":
-          this.zero = r[a] === b;
-          this.carry = r[a] < b;
+          calculate("SUB", r[a], b, false);
           break;
         case "JMP":
           this.pc = a;
@@ -307,18 +372,18 @@ export class Computer {
           r[a] = this.pop();
           break;
         case "LDX":
-          r[a] = this.read((b + r[c]) & 65535);
+          r[a] = this.busRead((b + r[c]) & 65535);
           break;
         case "STX":
           this.write((b + r[c]) & 65535, r[a]);
           break;
         case "PIXEL":
           if (r[a] < screenWidth && r[b] < screenHeight) {
-            this.framebuffer[r[b] * screenWidth + r[a]] = r[c] & 7;
+            this.write(0xf000 + r[b] * screenWidth + r[a], r[c]);
           }
           break;
         case "CLS":
-          this.framebuffer.fill(0);
+          this.write(0xff02, 1);
           break;
       }
       this.cycles++;
@@ -334,19 +399,64 @@ export class Computer {
     for (let i = 0; i < budget && !this.halted; i++) this.step();
   }
 }
-export const biosGame = `.org 0
-; Boot ROM calls the game at 0200.
-LDI R0, 'L'
-ST R0, 0xFF03
-LDI R0, 'I'
-ST R0, 0xFF03
-LDI R0, 'T'
-ST R0, 0xFF03
-LDI R0, 10
-ST R0, 0xFF03
+export function bootProgram(game: string, title: string, instructions: string) {
+  const messages = {
+    boot: "Literal 8 BIOS\nROM: 8 KiB | Screen: 32 x 24\n",
+    ready: `RAM: 256-byte self-test OK\n${title}\n${instructions}\n`,
+    failed: "RAM self-test failed. Boot stopped.\n",
+  };
+  const printers = Object.keys(messages).map((name) =>
+    `${name}_print:
+LDI R0, 0
+${name}_next:
+LDX R1, ${name}_text, R0
+CMPI R1, 0
+JZ ${name}_return
+ST R1, 0xFF03
+ADDI R0, 1
+JMP ${name}_next
+${name}_return:
+RET`
+  ).join("\n");
+  const data = Object.entries(messages).map(([name, value]) =>
+    `${name}_text:\n.byte ${
+      [...value].map((c) => c.charCodeAt(0)).concat(0).join(", ")
+    }`
+  ).join("\n");
+  return `.org 0
+CALL boot_print
+LDI R0, 0
+ram_test:
+LDI R1, 85
+STX R1, 0x2000, R0
+LDX R2, 0x2000, R0
+CMP R1, R2
+JNZ boot_failed
+LDI R1, 170
+STX R1, 0x2000, R0
+LDX R2, 0x2000, R0
+CMP R1, R2
+JNZ boot_failed
+LDI R1, 0
+STX R1, 0x2000, R0
+ADDI R0, 1
+JNZ ram_test
+CALL ready_print
 CALL game
 HALT
-.org 0x0200
+boot_failed:
+CALL failed_print
+HALT
+${game}
+.org 0x1000
+${printers}
+.org 0x1400
+${data}
+`;
+}
+
+export const biosGame = bootProgram(
+  `.org 0x0200
 game:
 CLS
 LDI R0, 16
@@ -414,4 +524,7 @@ LD R3, 0xFF01
 CMPI R3, 0
 JNZ released
 JMP wait
-`;
+`,
+  "Pixel collector",
+  "Arrows: move | White: player | Green: food",
+);

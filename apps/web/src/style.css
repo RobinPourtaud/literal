@@ -1162,132 +1162,6 @@ dialog::backdrop {
 .workspace-close {
   margin-left: auto;
 }
-.computer-layout {
-  display: grid;
-  grid-template-columns: minmax(280px, 1fr) minmax(380px, 1.2fr);
-  min-height: 0;
-  flex: 1;
-}
-.assembly-pane {
-  border-right: 1px solid var(--line);
-  padding: 16px;
-  overflow: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-#assembly-source {
-  width: 100%;
-  min-height: 320px;
-  flex: 1;
-  resize: vertical;
-  font: 13px/1.6 monospace;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: #fafbf7;
-  padding: 14px;
-  color: inherit;
-}
-#assembly-error {
-  color: #a14638;
-  margin: 0;
-}
-.assembly-pane details {
-  font-size: 12px;
-  line-height: 1.7;
-}
-.assembly-pane details code {
-  white-space: nowrap;
-}
-.assembly-listing {
-  max-height: 220px;
-  flex-shrink: 0;
-  overflow: auto;
-  font: 11px/1.8 monospace;
-}
-.assembly-listing div {
-  display: grid;
-  grid-template-columns: 45px 110px 1fr;
-  gap: 8px;
-  padding: 1px 5px;
-  border-radius: 4px;
-}
-.assembly-listing .current {
-  background: #dfe8d0;
-}
-.computer-monitor {
-  padding: 16px 24px;
-  overflow: auto;
-}
-.screen-controls {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 10px;
-}
-.screen-controls label {
-  font-size: 11px;
-}
-.screen-controls input,
-#memory-address {
-  width: 75px;
-  margin-left: 8px;
-}
-#computer-screen {
-  width: min(100%, 420px);
-  aspect-ratio: 4/3;
-  image-rendering: pixelated;
-  border-radius: 10px;
-  border: 10px solid #d6ddce;
-  background: #101a18;
-  display: block;
-  cursor: pointer;
-}
-.computer-keys {
-  display: flex;
-  gap: 5px;
-  justify-content: center;
-  padding: 8px;
-}
-.computer-keys button {
-  border: 1px solid var(--line);
-  width: 40px;
-}
-#computer-status {
-  font-size: 12px;
-  color: var(--muted);
-  margin: 5px 0 14px;
-}
-.cpu-registers {
-  display: grid;
-  grid-template-columns: repeat(6, 1fr);
-  gap: 8px;
-}
-.cpu-registers span {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  background: #edf0e7;
-  border-radius: 6px;
-  padding: 8px;
-  font: 10px monospace;
-}
-.cpu-registers b {
-  font: 15px monospace;
-}
-.computer-terminal {
-  white-space: pre-wrap;
-  background: #e9eee1;
-  border-radius: 8px;
-  padding: 12px;
-  min-height: 45px;
-  font: 12px/1.6 monospace;
-}
-.memory-bytes {
-  font: 11px/1.7 monospace;
-  overflow: auto;
-}
 .kmap-layout {
   flex: 1;
   overflow: auto;
@@ -1390,4 +1264,128 @@ dialog::backdrop {
 }
 #computer-screen {
   margin-inline: auto;
+}
+
+.pinned-card {
+  border-bottom: 1px solid var(--line);
+  padding: 12px 14px;
+}
+.pinned-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.pinned-heading button {
+  font-size: 12px;
+  font-weight: 600;
+}
+.pinned-card canvas {
+  width: 100%;
+  aspect-ratio: 4/3;
+  image-rendering: pixelated;
+  background: #101a18;
+  border-radius: 8px;
+}
+.pinned-card pre {
+  white-space: pre-wrap;
+  overflow: auto;
+  max-height: 120px;
+  font: 11px/1.6 monospace;
+}
+.pinned-card .key-row {
+  margin-top: 8px;
+}
+#pinned-devices {
+  max-height: 62dvh;
+  overflow: auto;
+}
+.mode-choices {
+  display: grid;
+  gap: 12px;
+}
+.mode-choices button {
+  text-align: left;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.mode-choices strong {
+  font-size: 18px;
+}
+.mode-choices span {
+  color: var(--muted);
+  line-height: 1.6;
+}
+.inside-scroll {
+  overflow: auto;
+  max-height: 55dvh;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fafbf7;
+}
+.inside-breadcrumbs {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.inside-breadcrumbs button {
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: #e8eedf;
+}
+.transistor-channel {
+  fill: none;
+  stroke: #7c8975;
+  stroke-width: 2;
+}
+.transistor-channel.conducting {
+  stroke: #527d3c;
+  stroke-width: 3;
+}
+.floating .gate-shape,
+.floating .pin-dot {
+  stroke: #8a8399;
+  stroke-dasharray: 3 3;
+}
+
+.clock-frequency {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+  font-size: 12px;
+}
+.clock-frequency input {
+  width: 76px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 5px;
+}
+#clock-measured {
+  font-size: 11px;
+  white-space: nowrap;
+}
+.screen-preview {
+  width: 100%;
+  background: #101619;
+  border-radius: 8px;
+  image-rendering: pixelated;
+}
+.memory-preview {
+  max-height: 240px;
+  overflow: auto;
+  font-size: 11px;
+}
+.transistor-section {
+  width: 100%;
+}
+
+#pinned-devices.has-selection {
+  max-height: 180px;
+  flex-shrink: 0;
 }

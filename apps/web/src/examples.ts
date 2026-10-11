@@ -1,3 +1,4 @@
+import { computerCircuit } from "@literal/core";
 import type { Circuit, Component, Kind, Wire } from "@literal/core";
 const n = (
   id: string,
@@ -279,4 +280,12 @@ examples.push({
   name: "Byte counter",
   description: "An eight-bit clocked counter and hexadecimal readout.",
   circuit: counterByte,
+});
+
+examples.push({
+  id: "snake-computer",
+  name: "Snake computer",
+  description:
+    "Clock, CPU control, gate ALU, ROM, RAM, keyboard, framebuffer and terminal connected with bit wires.",
+  circuit: computerCircuit(),
 });

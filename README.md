@@ -13,8 +13,8 @@ runs. All circuit execution and storage happen locally in the browser.
 - LEDs, seven-segment and hexadecimal displays, and a VGA-style pixel screen.
 - Mapped physical / virtual keyboard, byte registers and counters, an eight-bit
   adder, 256-byte RAM, and editable ROM.
-- Assembly workspace with an eight-bit CPU interpreter, BIOS boot routine,
-  opcode game, breakpoints, memory inspection, and ROM export.
+- Wired eight-bit computer example with a gate ALU, BIOS boot routine, opcode
+  game, memory inspection, and ROM editing.
 - Karnaugh maps with circuit-output import and exact sum-of-products
   minimization.
 - Reusable custom components with named pins, colors, shapes, and nested
@@ -112,19 +112,34 @@ outputs. Truth tables include one column per display input.
 
 ## Computer and Karnaugh tools
 
-Open **Computer** for the Literal 8 instruction workspace. Choose **BIOS + pixel
-game**, **Assemble & reset**, then **Run**. Capture the keyboard and use arrow
-keys to collect green pixels. The score lives at RAM `2000`. Pause, step, set
-breakpoints, inspect registers and memory, or edit the program and export its
-ROM. See [the machine and instruction reference](docs/computer.md).
+Load **Examples → Snake computer** to place the CPU, ALU, ROM, RAM, keyboard,
+screen, and terminal on the circuit canvas, connected by individual bit wires.
+The screen renders its framebuffer directly on the component. Select a device
+for its controls in the right panel, or pin it there for continuous inspection.
+ROM accepts assembly or hex bytes; RAM accepts hex writes. Keyboard controls
+include virtual keys, physical capture, and remapping.
 
-![Computer workspace](docs/computer.png)
+Use **Run clock** and adjust **Clock Hz** while running. The measured rate shows
+when the circuit cannot reach the requested frequency. At slow rates, hold keys
+long enough for the program to poll them. **Step** toggles the clock once.
 
-The instruction runner operates independently of the gate canvas. It implements
-Literal's custom ISA; it does not run existing PC BIOS binaries or turn a drawn
-circuit into a processor. Gate-canvas byte devices use individual bit wires. The
-screen and keyboard are framebuffer/parallel-byte interfaces rather than VGA
-timings or serial PS/2.
+The BIOS tests RAM and starts Snake, written in Literal 8 assembly. Arrow
+presses move one cell; collect food, avoid walls and your body, and press R to
+restart. See [the machine and instruction reference](docs/computer.md).
+
+![Snake running on the wired circuit](docs/snake.png)
+
+**See inside** opens reusable components recursively. Logic gates expose CMOS
+switch networks, and transistors expose their terminals and structure. The ALU
+is the actual simulated gate circuit: changing its wires changes CPU results.
+Instruction control, registers, and memory remain behavioral models. Transistors
+use digital switch semantics, including high impedance and conflicting drivers;
+this is not an analog electrical simulator or a PC BIOS emulator.
+
+Choose **Discover** at launch to start with power, ground, transistors, and
+junctions. Other built-in components are hidden; save your circuits as reusable
+components to build your own library. **Playground** provides all components and
+examples. The modes retain separate circuit workspaces.
 
 Open **Karnaugh** to edit a 1–4 variable map or load an output from the current
 combinational circuit. Cells cycle through 0, 1, and don't-care X. Gray
@@ -188,11 +203,12 @@ Use `parseCircuit` to validate external documents. See
 To repeat the browser checks, start `deno task dev --port 5176`, open an Orca
 browser tab for this worktree, and run `deno task browser-check`. Run
 `deno task features-check` to check displays and custom-component creation and
-reuse. Run `deno task computer-check` for keyboard mapping, screen writes, BIOS
-execution, gameplay, breakpoints, and Karnaugh interactions. This replaces the
-preview's current circuit while testing and finishes on the half adder example.
-The checks dispatch DOM pointer and keyboard events through Orca's browser
-evaluation API; they do not certify native mouse or touch input.
+reuse. Run `deno task computer-check` for screen writes, BIOS execution, device
+controls, adjustable clock frequency, recursive transistor inspection, and
+discovery mode. Computer and API checks preserve the browser's saved circuits,
+library, mode, and preferences. The checks dispatch DOM pointer and keyboard
+events through Orca's browser evaluation API; they do not certify native mouse
+or touch input.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md). Original code is MIT licensed. Logisim
 is an inspiration; no Logisim source is included.

@@ -73,7 +73,9 @@ function loadCircuit() {
     const output = Number($<HTMLSelectElement>("kmap-output").value);
     if (!table.outputs[output]) throw Error("Choose an output.");
     names = table.inputs.map((c, i) => c.label || `X${i}`);
-    cells = table.rows.map((r) => r.outputs[output]);
+    cells = table.rows.map((r) =>
+      r.outputs[output] === "Z" ? "X" : r.outputs[output]
+    ) as typeof cells;
     selectedGroup = -1;
     $<HTMLSelectElement>("kmap-variables").value = String(names.length);
     $("kmap-status").textContent = `Loaded ${table.outputs[output].label}.`;

@@ -5,6 +5,7 @@ import {
   Computer,
   grayOrder,
   minimizeLogic,
+  snakeGame,
 } from "@literal/core";
 
 Deno.test("assembler resolves forward labels and emits little-endian addresses", () => {
@@ -77,8 +78,9 @@ HALT`);
 });
 Deno.test("BIOS boots the opcode demo and keyboard instructions move the pixel", () => {
   const cpu = new Computer(assemble(biosGame).rom);
-  cpu.run(200);
-  assert.equal(cpu.terminal, "LIT\n");
+  cpu.run(10000);
+  assert.match(cpu.terminal, /RAM: 256-byte self-test OK/);
+  assert.equal(cpu.read(0x20ff), 0);
   assert.equal(cpu.framebuffer[12 * 32 + 16], 7);
   assert.equal(cpu.error, "");
   cpu.keyboard = { code: 131, pressed: true };
@@ -98,6 +100,67 @@ Deno.test("BIOS boots the opcode demo and keyboard instructions move the pixel",
   assert.equal(cpu.error, "");
   cpu.write(0xff02, 1);
   assert.ok(cpu.framebuffer.every((p) => p === 0));
+});
+Deno.test("Snake opcodes grow, reject reversal, collide, restart and avoid occupied food", () => {
+  const cpu = new Computer(assemble(snakeGame).rom);
+  cpu.run(10000);
+  const press = (code: number) => {
+    cpu.keyboard = { code, pressed: true };
+    cpu.run(4000);
+    cpu.keyboard.pressed = false;
+    cpu.run(1000);
+    assert.equal(cpu.error, "");
+  };
+  assert.match(cpu.terminal, /self-test OK\nSNAKE/);
+  assert.equal(cpu.read(0x2000), 3);
+  assert.equal(cpu.framebuffer[0], 4);
+  press(131);
+  assert.equal(cpu.read(0x2000), 4);
+  assert.equal(cpu.read(0x2001), 1);
+  assert.equal(cpu.read(0x2100), 17);
+  assert.deepEqual(Array.from({ length: 4 }, (_, i) => cpu.read(0x2100 + i)), [
+    17,
+    16,
+    15,
+    14,
+  ]);
+  assert.equal(cpu.framebuffer[17 * 32 + 24], 2);
+  press(130);
+  assert.equal(cpu.read(0x2100), 17);
+  cpu.registers[5] = 18;
+  cpu.registers[6] = 12;
+  press(131);
+  assert.equal(cpu.read(0x2000), 5);
+  press(129);
+  press(130);
+  press(128);
+  assert.equal(cpu.read(0x2004), 1);
+  assert.match(cpu.terminal, /Game over/);
+  press(82);
+  assert.equal(cpu.read(0x2004), 0);
+  assert.equal(cpu.read(0x2001), 0);
+  for (let i = 0; i < 15; i++) press(131);
+  assert.equal(cpu.read(0x2004), 1);
+  press(82);
+  cpu.registers[5] = 17;
+  cpu.registers[6] = 12;
+  cpu.write(0x2101, 24);
+  cpu.write(0x2201, 17);
+  press(131);
+  assert.notEqual(cpu.framebuffer[17 * 32 + 24], 2);
+  assert.equal(cpu.framebuffer[22 * 32 + 1], 2);
+});
+Deno.test("BIOS reports a RAM self-test failure and does not launch the game", () => {
+  class FaultyRAM extends Computer {
+    override write(address: number, value: number) {
+      super.write(address, address === 0x2080 ? 0 : value);
+    }
+  }
+  const cpu = new FaultyRAM(assemble(snakeGame).rom);
+  cpu.run(10000);
+  assert.equal(cpu.halted, true);
+  assert.match(cpu.terminal, /RAM self-test failed/);
+  assert.ok(cpu.framebuffer.every((v) => v === 0));
 });
 Deno.test("Karnaugh minimization matches every three-variable function and don't-care groups", () => {
   for (let table = 0; table < 256; table++) {

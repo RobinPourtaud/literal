@@ -1,24 +1,52 @@
 # Literal 8 computer
 
-The **Computer** workspace runs a small custom instruction set. It is a
-byte-level interpreter, independent of the gate canvas. It makes boot routines
-and opcode games testable while you build circuit components. It is not an x86,
-6502, or PC BIOS emulator, and does not translate a drawn circuit into a CPU.
+Load **Examples → Snake computer** in Playground. The machine is an editable
+circuit with CPU, gate ALU, ROM, RAM, keyboard, screen, and terminal connected
+through a 16-bit address / 8-bit data bus.
+
+## Controls
+
+- **Run clock** starts execution; **Clock Hz** adjusts frequency while running.
+  The actual measured rate depends on browser and circuit performance.
+- **Step** toggles clocks once; an instruction runs on each rising edge.
+- Click keyboard for virtual keys, physical capture, and key remapping.
+- Click screen for a preview; the framebuffer is also visible on the circuit.
+- Click ROM to edit assembly or hex bytes and assemble/reset the machine.
+- Click RAM to inspect contents and write hex bytes at a chosen address.
+- **Pin to right panel** keeps a device visible while inspecting another.
+- **See inside** traverses custom circuits, logic gates, and transistor
+  structure.
+
+## Implementation
+
+The CPU drives real address/data/control pins. ROM, RAM, keyboard, and screen
+respond through their connections. The ALU is a programmable AND/OR/NOT circuit;
+its wired results feed the CPU. Disconnecting or changing wires changes
+behavior. Instruction sequencing, registers, memory, and peripherals are
+behavioral models. Gate inspection exposes digital CMOS switch networks, not
+analog physics.
 
 ## Run the included game
 
-1. Open **Computer**.
-2. Choose **BIOS + pixel game**, then **Assemble & reset**.
-3. Choose **Run**, then **Capture keyboard** or click the screen.
-4. Use arrow keys to move the white player and collect green targets. On-screen
-   arrow buttons also work. The score is stored at RAM address `2000`.
-5. Press Escape to release the keyboard. Pause, Step, or set a hex breakpoint to
-   inspect execution. `0200` stops at the game's entry point after boot.
+Run the clock and wait for the BIOS RAM self-test. Use arrow keys or the virtual
+buttons to move one cell per press. Hold a key long enough for the program to
+poll it, especially at low clock rates. Collect green food, avoid walls and your
+body, and press R after game over. Escape releases physical keyboard capture.
 
-A key moves once per press. Release it before moving again. The boot ROM prints
-`LIT`, calls the game at `0200`, and provides a return address on the stack. The
-game reads the keyboard through memory-mapped addresses and draws with
-instructions; the UI does not implement its movement or scoring logic.
+The boot ROM prints its device configuration, writes and checks both `55` and
+`AA` patterns across the first 256 bytes of RAM, clears those bytes, and calls
+into the game. A failed memory check halts boot. The displayed log comes from
+instructions writing to the terminal device.
+
+Snake uses the existing instruction set: indexed RAM stores the body, branches
+check collisions, and `PIXEL` draws the board. The UI supplies key state and
+renders output; movement, food placement, growth, winning, and restarting all
+run as assembled opcodes. [The source](../packages/core/src/snake.ts) can be
+edited in the ROM inspector and saved with the circuit.
+
+Snake stores length at `2000`, score at `2001`, state at `2004` (0 playing, 1
+game over, 2 won), and body X/Y coordinates at `2100`/`2200`. Food placement
+checks occupied cells.
 
 ## Machine
 
@@ -55,9 +83,10 @@ sync/timing model.
 The editor supports labels, `;` comments, `.org address`, `.byte byte, ...`,
 decimal, `0x` hexadecimal, `0b` binary, and single ASCII character literals.
 **Assemble & reset** validates a complete ROM before replacing the running
-program. **Save source** downloads `.asm`; **Export ROM** downloads 8 KB of
-assembled bytes. The last successfully assembled source is saved in this
-browser.
+program. **Run** and **Step** also assemble changed source before execution, and
+refuse invalid source. **Restart** resets a halted program. **Save source**
+downloads `.asm`; **Export ROM** downloads 8 KB of assembled bytes. The last
+successfully assembled source is saved in this browser.
 
 | Instructions                       | Operands / behavior                                        |
 | ---------------------------------- | ---------------------------------------------------------- |

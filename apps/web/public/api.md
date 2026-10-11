@@ -130,8 +130,8 @@ Definitions can contain other combinational custom components.
 
 ## Computer
 
-The independent Literal 8 interpreter uses eight byte registers and 16-bit
-addresses. It does not execute x86 BIOS binaries or compile the gate canvas.
+The wired Literal 8 computer uses eight byte registers and 16-bit addresses. It
+does not execute x86 BIOS binaries or compile the gate canvas.
 
 ```js
 await window.literal.computer({
@@ -149,13 +149,14 @@ await window.literal.computer({ action: "key", code: 131, pressed: false });
 await window.literal.computer({ action: "reset" });
 ```
 
-Actions pause automatic playback. `assemble` requires source (maximum 200 KB).
-`step` accepts 1–10,000 instructions (default 1); it ignores breakpoints like
-manual single-stepping. `key` requires an 8-bit code and pressed boolean. State
-includes registers, PC, SP, flags, cycles, keyboard, framebuffer, terminal,
-source, halted/error fields, and a memory slice. Memory options accept addresses
-0–65535 and lengths 1–256 (default address `2000`, length 64). Reading before
-opening the workspace returns `{ initialized: false }` without opening it.
+Mutating actions pause automatic playback; reading state leaves the clock
+running. `assemble` requires source (maximum 200 KB). `step` accepts 1–10,000
+instructions (default 1); it manually pulses the wired clock. `key` requires an
+8-bit code and pressed boolean. State includes registers, PC, SP, flags, cycles,
+keyboard, framebuffer, terminal, source, halted/error fields, and a memory
+slice. Memory options accept addresses 0–65535 and lengths 1–256 (default
+address `2000`, length 64). Reading before loading a circuit with a CPU returns
+`{ initialized: false }` without creating one.
 
 Memory map: ROM `0000–1FFF`; RAM `2000–EFFF`; framebuffer `F000–F2FF`; keyboard
 code `FF00`; pressed `FF01`; screen clear `FF02`; terminal `FF03`. Keyboard uses
@@ -189,3 +190,8 @@ circuit. Groups contain a bit pattern, covered cell indices, and their term.
 `computer`, `minimize_logic`.
 
 Use `getTools()` for the exact schemas of arguments to `call(name, args)`.
+
+The `assemble` action replaces the current canvas with a wired computer circuit.
+CPU execution reads ROM/RAM/peripheral pins and obtains arithmetic results from
+the gate ALU. Signals may be 0, 1, X (unknown), or Z (high impedance).
+Instruction control, registers, and memory remain behavioral models.
