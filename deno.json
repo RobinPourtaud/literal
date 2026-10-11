@@ -1,0 +1,36 @@
+{
+  "nodeModulesDir": "auto",
+  "imports": {
+    "@literal/core": "./packages/core/src/index.ts",
+    "vite": "npm:vite@7.3.7",
+    "lucide": "npm:lucide@0.468.0"
+  },
+  "compilerOptions": {
+    "lib": [
+      "dom",
+      "dom.iterable",
+      "deno.ns"
+    ],
+    "types": [
+      "./apps/web/src/assets.d.ts"
+    ]
+  },
+  "tasks": {
+    "dev": "deno run -A npm:vite@7.3.7 --config apps/web/vite.config.ts",
+    "check": "deno check apps/web/src/main.ts packages/core/src/index.ts",
+    "test": "deno test tests/",
+    "build": "deno task check && deno run -A npm:vite@7.3.7 build --config apps/web/vite.config.ts",
+    "preview": "deno run -A npm:vite@7.3.7 preview --config apps/web/vite.config.ts",
+    "fmt": "deno fmt",
+    "browser-check": "deno run --allow-run=orca --allow-write=docs scripts/browser_check.ts",
+    "fmt-check": "deno fmt --check"
+  },
+  "fmt": {
+    "exclude": [
+      "deno.lock",
+      "dist",
+      "node_modules",
+      "apps/web/.vite"
+    ]
+  }
+}
