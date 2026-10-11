@@ -52,7 +52,8 @@ import robin from "./robin.svg?raw";
 import { blank, clone, examples } from "./examples.ts";
 import { dimensions, draw, esc, path, pin, type Point } from "./drawing.ts";
 import "./style.css";
-import { openComputer } from "./computer-ui.ts";
+import { controlComputer, openComputer } from "./computer-ui.ts";
+import { createAgentAPI } from "./agent-api.ts";
 import { openKarnaugh } from "./karnaugh-ui.ts";
 const $ = <T extends Element = HTMLElement>(selector: string): T =>
   document.querySelector<T>(selector)!;
@@ -1562,3 +1563,99 @@ persist();
 render();
 requestAnimationFrame(fit);
 if (storageWarning) notify(storageWarning);
+
+const state = () =>
+  clone({
+    circuit,
+    selected: [...selected],
+    library,
+    simulation: {
+      values: sim.values,
+      inputs: sim.inputs,
+      outputValues: sim.outputValues,
+      warnings: sim.warnings,
+    },
+    clockRunning: running !== null,
+  });
+
+window.literal = createAgentAPI({
+  state,
+  examples: examples.map(({ id, name, description }) => ({
+    id,
+    name,
+    description,
+  })),
+  loadExample: (id) => {
+    load(examples.find((e) => e.id === id)!.circuit);
+    return state();
+  },
+  replaceCircuit: (json) => {
+    const next = parseCircuit(json);
+    load(next);
+    return state();
+  },
+  setInputs: (values) => {
+    const nodes = values.map(({ id }) =>
+      circuit.components.find((c) => c.id === id)
+    );
+    if (
+      nodes.some((c) => !c || !["INPUT", "CLOCK"].includes(c.kind))
+    ) throw Error("Each id must identify an Input or Clock component.");
+    if (
+      new Set(values.map((v) => v.id)).size !== values.length
+    ) throw Error("Duplicate input id.");
+    stop();
+    mutate(() => values.forEach((v, i) => nodes[i]!.value = v.value));
+    return state();
+  },
+  clock: (steps, reset) => {
+    stop();
+    if (reset) {
+      releaseKeyboard();
+      keyboards = {};
+      memory = { q: {}, clock: {} };
+      for (const c of circuit.components) {
+        if (c.kind === "CLOCK") c.value = 0;
+      }
+      evaluate();
+    }
+    for (let i = 0; i < steps; i++) tick();
+    persist();
+    render();
+    return state();
+  },
+  truthTable: () => truthTable(circuit),
+  createComponent: (ids, options) => {
+    if (library.length >= 100) {
+      throw Error("Library limit: 100 custom components.");
+    }
+    if (
+      new Set(ids).size !== ids.length ||
+      ids.some((id) => !circuit.components.some((c) => c.id === id))
+    ) throw Error("Choose existing component ids without duplicates.");
+    const def = createDefinition(circuit, new Set(ids), {
+      id: uid(),
+      name: options.name,
+      color: options.color,
+      shape: options.shape,
+    });
+    mutate(() => circuit.definitions = [...(circuit.definitions ?? []), def]);
+    retainDefinitions();
+    render();
+    return clone(def);
+  },
+  history: (direction) => {
+    history(direction);
+    return state();
+  },
+  computer: (input) => {
+    if (input.action !== "state") {
+      stop();
+      releaseKeyboard();
+      capturedKeyboard = null;
+      evaluate();
+      render();
+    }
+    return controlComputer(input);
+  },
+});

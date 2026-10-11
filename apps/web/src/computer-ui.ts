@@ -290,3 +290,53 @@ export function openComputer() {
   root.hidden = false;
   paint();
 }
+
+export function controlComputer(input: import("./agent-api.ts").ComputerInput) {
+  const address = input.address ?? 0x2000, length = input.length ?? 64;
+  if (input.action === "state" && !machine) return { initialized: false };
+  const compiled = input.action === "assemble" ? assemble(input.source!) : null;
+  if (input.action !== "state") {
+    openComputer();
+    stop();
+    if (input.action === "assemble") {
+      assembly = compiled!;
+      source = input.source!;
+      byId<HTMLTextAreaElement>("assembly-source").value = source;
+      byId("assembly-error").textContent = "";
+      try {
+        localStorage.setItem("literal.assembly", source);
+      } catch {}
+      listing();
+      reset();
+    } else if (input.action === "reset") reset();
+    else if (input.action === "step") machine.run(input.steps ?? 1);
+    else if (input.action === "key") {
+      release();
+      machine.keyboard = { code: input.code!, pressed: input.pressed! };
+    }
+    paint();
+  }
+  return {
+    initialized: true,
+    source,
+    registers: [...machine.registers],
+    pc: machine.pc,
+    sp: machine.sp,
+    zero: machine.zero,
+    carry: machine.carry,
+    halted: machine.halted,
+    error: machine.error,
+    cycles: machine.cycles,
+    running: timer !== null,
+    keyboard: { ...machine.keyboard },
+    terminal: machine.terminal,
+    framebuffer: [...machine.framebuffer],
+    memory: {
+      address,
+      bytes: Array.from(
+        { length: Math.min(length, 65536 - address) },
+        (_, i) => machine.read(address + i),
+      ),
+    },
+  };
+}

@@ -137,6 +137,24 @@ The **Keyboard pixels** example demonstrates physical-key mapping and pixel
 writes. The **Byte counter** example connects a clocked eight-bit counter to
 hexadecimal displays.
 
+## Browser API
+
+A short comment at the start of the HTML points agents to `/api.md`. The page
+exposes `window.literal` for reading/editing circuits, input and clock control,
+custom components, CPU execution, and Karnaugh simplification. Calls update the
+same UI and autosave as manual interactions. No WebMCP or special browser
+support is required.
+
+```js
+window.literal.getTools();
+await window.literal.loadExample("half-adder");
+const state = await window.literal.getState();
+```
+
+See [the browser API reference](apps/web/public/api.md). Use
+`deno task api-check` with the Orca preview to check the API against the live
+app.
+
 ## Reusable simulation core
 
 `packages/core` has no DOM dependencies. It can be imported by a Deno program or
