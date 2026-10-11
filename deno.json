@@ -23,7 +23,9 @@
     "preview": "deno run -A npm:vite@7.3.7 preview --config apps/web/vite.config.ts",
     "fmt": "deno fmt",
     "browser-check": "deno run --allow-run=orca --allow-write=docs scripts/browser_check.ts",
-    "fmt-check": "deno fmt --check"
+    "fmt-check": "deno fmt --check",
+    "features-check": "deno run --allow-run=orca --allow-write=docs scripts/features_check.ts",
+    "computer-check": "deno run --allow-run=orca --allow-write=docs scripts/computer_check.ts"
   },
   "fmt": {
     "exclude": [

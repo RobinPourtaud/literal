@@ -1,14 +1,26 @@
 import {
   type Circuit,
   type Component,
+  componentInputLabel,
+  componentInputs,
+  componentOutputLabel,
+  componentOutputs,
   connect,
+  createDefinition,
+  type Definition,
+  definitionOf,
   hasOutput,
+  hexValue,
   inputCount,
+  inputLabel,
+  keyboardCode,
+  type KeyboardState,
   type Kind,
   type Memory,
   parseCircuit,
   simulate,
   truthTable,
+  virtualKeys,
 } from "@literal/core";
 import {
   ArrowUpRight,
@@ -38,8 +50,10 @@ import {
 } from "lucide";
 import robin from "./robin.svg?raw";
 import { blank, clone, examples } from "./examples.ts";
-import { draw, esc, path, pin, type Point } from "./drawing.ts";
+import { dimensions, draw, esc, path, pin, type Point } from "./drawing.ts";
 import "./style.css";
+import { openComputer } from "./computer-ui.ts";
+import { openKarnaugh } from "./karnaugh-ui.ts";
 const $ = <T extends Element = HTMLElement>(selector: string): T =>
   document.querySelector<T>(selector)!;
 const icons = {
@@ -85,6 +99,11 @@ try {
     "Saved circuit could not be loaded. You can open a circuit file instead.";
 }
 let memory: Memory = { q: {}, clock: {} };
+let keyboards: Record<string, KeyboardState> = {};
+let capturedKeyboard: string | null = null;
+let mappingKeyboard: string | null = null;
+let mappingValue = "A";
+const heldKeys = new Map<string, number>();
 let sim = simulate(circuit, memory);
 memory = sim.memory;
 let selected = new Set<string>(),
@@ -105,9 +124,57 @@ let drag: {
   moved: boolean;
   additive: boolean;
 } | null = null;
+let placementDefinition: string | null = null;
+let library: Definition[] = [];
+try {
+  const saved = localStorage.getItem("literal.library");
+  if (saved) {
+    library = parseCircuit(
+      JSON.stringify({
+        version: 1,
+        name: "Library",
+        components: [],
+        wires: [],
+        definitions: JSON.parse(saved),
+      }),
+    ).definitions ?? [];
+  }
+} catch {
+  storageWarning = "The custom component library could not be loaded.";
+}
+function retainDefinitions() {
+  for (const def of circuit.definitions ?? []) {
+    if (!library.some((d) => d.id === def.id)) library.push(clone(def));
+  }
+  try {
+    localStorage.setItem("literal.library", JSON.stringify(library));
+  } catch {
+    notify(
+      "Component library could not be saved. Download your circuit to keep its definitions.",
+    );
+  }
+}
 const descriptions: Record<Kind, string> = {
   INPUT: "Toggle a logic signal.",
   OUTPUT: "Show a signal value.",
+  LED: "Light when the input is high. Amber means unknown.",
+  SEVEN_SEG:
+    "Drive segments a–g and the decimal point separately. 1 lights a segment; X is shown in amber.",
+  HEX_DISPLAY:
+    "Show hexadecimal 0–F from four bits. Bit 0 has weight 1; bit 3 has weight 8. All four inputs must be connected.",
+  VGA:
+    "32 × 24 RGB pixel screen. Write on a rising edge; Clear resets the framebuffer.",
+  KEYBOARD:
+    "Mapped physical and virtual keys. Eight ASCII bits and a Pressed output.",
+  REGISTER8:
+    "Eight-bit register. Rising Clock captures data when Enable is high. Clear resets immediately.",
+  COUNTER8:
+    "Eight-bit counter. Rising Clock increments when Enable is high. Clear resets immediately.",
+  ADDER8: "Eight-bit addition with carry in and carry out.",
+  RAM:
+    "256-byte RAM. Write on a rising Clock when Write is high. Read is asynchronous.",
+  ROM:
+    "256-byte ROM. Edit hex bytes in the inspector. Missing bytes read as zero.",
   AND: "High when both inputs are high.",
   OR: "High when either input is high.",
   NOT: "Invert an input.",
@@ -119,21 +186,34 @@ const descriptions: Record<Kind, string> = {
   MUX: "Select data 0 or data 1.",
   CLOCK: "A clock you can step or run.",
   DFF: "Store data on the rising clock edge.",
+  CUSTOM:
+    "A reusable combinational circuit. Pin names come from its Input and Output blocks.",
 };
-const groups: { name: string; kinds: Kind[] }[] = [{
-  name: "INPUT / OUTPUT",
-  kinds: ["INPUT", "OUTPUT", "CLOCK"],
-}, {
-  name: "GATES",
-  kinds: ["AND", "OR", "NOT", "NAND", "NOR", "XOR", "XNOR", "BUFFER"],
-}, { name: "STATE / ROUTING", kinds: ["DFF", "MUX"] }];
+const groups: { name: string; kinds: Kind[] }[] = [
+  {
+    name: "INPUT / OUTPUT",
+    kinds: ["INPUT", "CLOCK", "KEYBOARD"],
+  },
+  {
+    name: "OUTPUTS",
+    kinds: ["OUTPUT", "LED", "SEVEN_SEG", "HEX_DISPLAY", "VGA"],
+  },
+  {
+    name: "GATES",
+    kinds: ["AND", "OR", "NOT", "NAND", "NOR", "XOR", "XNOR", "BUFFER"],
+  },
+  {
+    name: "STATE / ROUTING",
+    kinds: ["DFF", "MUX", "REGISTER8", "COUNTER8", "ADDER8", "RAM", "ROM"],
+  },
+];
 $("#app").innerHTML =
   `<header class="topbar"><a class="brand" href="#" aria-label="Literal home"><img src="/mark.svg" width="36" height="36" alt=""><strong>Literal</strong><span>logic circuits</span></a><nav><button id="library-toggle">${
     icon("PanelLeft")
-  }<span>Components</span></button><button id="help">Reference</button></nav><a class="source-link" href="https://github.com/RobinPourtaud/literal" target="_blank" rel="noopener">Source ${
+  }<span>Components</span></button><button id="computer-tool">Computer</button><button id="karnaugh-tool">Karnaugh</button><button id="help">Reference</button></nav><a class="source-link" href="https://github.com/RobinPourtaud/literal" target="_blank" rel="noopener">Source ${
     icon("ArrowUpRight")
   }</a></header>
-<div class="shell"><aside class="library"><div class="library-scroll"><div class="sidebar-title">COMPONENTS <kbd>click to place</kbd></div>${
+<div class="shell"><aside class="library"><div class="library-scroll"><div class="sidebar-title">COMPONENTS <kbd>click to place</kbd></div><section class="custom-library"><h2>CUSTOM</h2><button id="create-custom">+ Create component</button><div id="custom-items"></div></section>${
     groups.map((g) =>
       `<section class="palette-group"><h2>${g.name}</h2>${
         g.kinds.map((k) =>
@@ -143,6 +223,16 @@ $("#app").innerHTML =
             ({
               INPUT: "↗",
               OUTPUT: "◉",
+              LED: "●",
+              SEVEN_SEG: "8",
+              HEX_DISPLAY: "F",
+              VGA: "▣",
+              KEYBOARD: "⌨",
+              REGISTER8: "R",
+              COUNTER8: "+",
+              ADDER8: "Σ",
+              RAM: "M",
+              ROM: "◆",
               CLOCK: "⌁",
               NOT: "¬",
               AND: "∧",
@@ -156,7 +246,23 @@ $("#app").innerHTML =
               MUX: "⇉",
             } as Record<Kind, string>)[k]
           }</span>${
-            k === "DFF"
+            k === "REGISTER8"
+              ? "Register (8-bit)"
+              : k === "COUNTER8"
+              ? "Counter (8-bit)"
+              : k === "ADDER8"
+              ? "Adder (8-bit)"
+              : k === "KEYBOARD"
+              ? "Keyboard"
+              : k === "VGA"
+              ? "VGA screen"
+              : k === "SEVEN_SEG"
+              ? "7-segment"
+              : k === "HEX_DISPLAY"
+              ? "Hex display"
+              : k === "LED"
+              ? "LED"
+              : k === "DFF"
               ? "D flip-flop"
               : k === "INPUT"
               ? "Input"
@@ -194,7 +300,7 @@ $("#app").innerHTML =
     icon("StepForward")
   }<span>Step</span></button><button id="run" class="primary">${
     icon("Play")
-  }Run clock</button><button id="reset" class="icon-button" aria-label="Reset simulation" title="Reset clock and flip-flop state">${
+  }Run clock</button><button id="reset" class="icon-button" aria-label="Reset simulation" title="Reset clocks, registers, RAM, and screens">${
     icon("RotateCcw")
   }</button></div></div>
 <div class="editor"><section class="board-panel" aria-label="Circuit editor"><div class="board-header"><div class="board-tools"><button id="place-center" hidden>Place at center</button><button id="select-tool" class="active" title="Select (V)">${
@@ -203,7 +309,7 @@ $("#app").innerHTML =
     icon("Hand")
   }Pan</button><button id="delete" class="icon-button" aria-label="Delete selection" title="Delete selection (Backspace)">${
     icon("Trash2")
-  }</button><button id="duplicate" class="icon-button" aria-label="Duplicate selection" title="Duplicate (⌘/Ctrl+D)">${
+  }</button><button id="create-custom-tool" title="Save selection as a reusable component">Create component</button><button id="duplicate" class="icon-button" aria-label="Duplicate selection" title="Duplicate (⌘/Ctrl+D)">${
     icon("Copy")
   }</button></div><div class="zoom-tools"><button id="zoom-out" class="icon-button" aria-label="Zoom out">${
     icon("Minus")
@@ -238,7 +344,7 @@ function persist() {
   }
 }
 function evaluate() {
-  sim = simulate(circuit, memory);
+  sim = simulate(circuit, memory, {}, keyboards);
   memory = sim.memory;
 }
 function remember(before: Circuit) {
@@ -261,8 +367,13 @@ function stop() {
 }
 function load(next: Circuit) {
   stop();
+  releaseKeyboard();
+  capturedKeyboard = null;
+  mappingKeyboard = null;
+  keyboards = {};
   const before = clone(circuit);
   circuit = clone(next);
+  retainDefinitions();
   remember(before);
   memory = { q: {}, clock: {} };
   selected.clear();
@@ -318,12 +429,22 @@ function fit() {
     view();
     return;
   }
-  const xs = circuit.components.map((c) => c.x),
-    ys = circuit.components.map((c) => c.y);
-  const left = Math.min(...xs) - 100,
-    top = Math.min(...ys) - 100,
-    w = Math.max(...xs) - left + 100,
-    h = Math.max(...ys) - top + 100;
+  const left = Math.min(
+    ...circuit.components.map((c) => c.x - dimensions(c, circuit).width / 2),
+  ) -
+    40;
+  const top = Math.min(
+    ...circuit.components.map((c) => c.y - dimensions(c, circuit).height / 2),
+  ) -
+    40;
+  const w = Math.max(
+    ...circuit.components.map((c) => c.x + dimensions(c, circuit).width / 2),
+  ) +
+    40 - left;
+  const h = Math.max(
+    ...circuit.components.map((c) => c.y + dimensions(c, circuit).height / 2),
+  ) +
+    40 - top;
   camera.zoom = Math.max(.25, Math.min(1.3, width / w, height / h));
   camera.x = left - (width / camera.zoom - w) / 2;
   camera.y = top - (height / camera.zoom - h) / 2;
@@ -355,7 +476,7 @@ function renderPreview() {
   if (wiring) {
     const c = circuit.components.find((c) => c.id === wiring!.id);
     if (c) {
-      const from = pin(c, wiring.port);
+      const from = pin(c, wiring.port, circuit);
       group.innerHTML = `<path class="wire-preview" d="${
         path(from, pointer)
       }"/>`;
@@ -371,6 +492,18 @@ function renderPreview() {
   }
 }
 function render() {
+  $("#custom-items").innerHTML = library.map((d) =>
+    `<div class="custom-library-row"><button class="palette-item ${
+      placementDefinition === d.id && placement === "CUSTOM" ? "active" : ""
+    }" data-custom="${d.id}" title="Place ${
+      esc(d.name)
+    }"><span class="custom-swatch" style="background:${d.color}"></span>${
+      esc(d.name)
+    }<span class="place-plus">+</span></button><button class="icon-button" data-edit-custom="${d.id}" aria-label="Edit ${
+      esc(d.name)
+    }">${icon("Pencil")}</button></div>`
+  ).join("");
+
   const active = document.activeElement as HTMLElement | null;
   const node = active?.closest<HTMLElement>(".component")?.dataset.node;
   const focusPin = active?.dataset.pin;
@@ -473,9 +606,17 @@ function renderDetails() {
   if (nodes.length === 1 && wires.length === 0) {
     const c = nodes[0];
     $("#details").innerHTML = `<div class="detail-heading"><h2>${
-      c.kind === "DFF" ? "D flip-flop" : c.kind
+      c.kind === "CUSTOM"
+        ? esc(definitionOf(c, circuit)?.name ?? "Custom")
+        : c.kind === "DFF"
+        ? "D flip-flop"
+        : c.kind
     }</h2><span class="signal-badge ${sim.values[c.id] === 1 ? "on" : ""}">${
-      sim.values[c.id]
+      c.kind === "HEX_DISPLAY"
+        ? hexValue(sim.inputs[c.id])?.toString(16).toUpperCase() ?? "X"
+        : c.kind === "SEVEN_SEG"
+        ? "a–g · dp"
+        : sim.values[c.id]
     }</span></div><p class="muted">${
       descriptions[c.kind]
     }</p><label class="field">Label<input id="component-label" value="${
@@ -486,26 +627,39 @@ function renderDetails() {
           c.label ? esc(c.label) : "input"
         } · ${sim.values[c.id]} ${icon("ToggleRight")}</button>`
         : ""
+    }${
+      c.kind === "KEYBOARD"
+        ? keyboardControls(c)
+        : c.kind === "VGA"
+        ? `<p class="muted">X0–4 / Y0–4 are little-endian coordinates. RGB is one bit per channel. Pulse Write from 0 to 1. Y 24–31 is ignored; Clear has priority.</p>`
+        : ""
+    }${
+      c.kind === "ROM"
+        ? `<label class="field">ROM bytes (hex, up to 256)<textarea id="rom-bytes" rows="5">${
+          (c.contents ?? []).map((b) => b.toString(16).padStart(2, "0")).join(
+            " ",
+          )
+        }</textarea></label><button id="save-rom" class="wide-button">Load ROM bytes</button><p id="rom-error" role="alert"></p>`
+        : ""
     }<h3>Pins</h3><ul class="pin-list">${
-      Array.from({ length: inputCount(c.kind) }, (_, i) => {
+      Array.from({ length: componentInputs(c, circuit) }, (_, i) => {
         const wire = circuit.wires.find((w) => w.to === c.id && w.port === i);
         const from = circuit.components.find((n) => n.id === wire?.from);
         return `<li><span>${
-          c.kind === "DFF"
-            ? i === 0 ? "Data" : "Clock"
-            : c.kind === "MUX"
-            ? ["Data 0", "Data 1", "Select"][i]
-            : `Input ${i + 1}`
+          esc(componentInputLabel(c, i, circuit))
         }</span><span>${sim.inputs[c.id]?.[i] ?? "X"} · ${
           from ? esc(from.label) : "unconnected"
         }</span></li>`;
       }).join("")
     }${
-      hasOutput(c.kind)
-        ? `<li><span>Output</span><span>${sim.values[c.id]} · ${
-          circuit.wires.filter((w) => w.from === c.id).length
-        } connections</span></li>`
-        : ""
+      Array.from({ length: componentOutputs(c, circuit) }, (_, port) =>
+        `<li><span>${esc(componentOutputLabel(c, port, circuit))}</span><span>${
+          sim.outputValues[c.id]?.[port] ?? sim.values[c.id]
+        } · ${
+          circuit.wires.filter((w) =>
+            w.from === c.id && (w.fromPort ?? 0) === port
+          ).length
+        } connections</span></li>`).join("")
     }</ul><button id="delete-detail" class="danger text-button">Delete component ${
       icon("Trash2")
     }</button>`;
@@ -537,6 +691,140 @@ function renderDetails() {
     );
   }
 }
+function keyboardControls(c: Component) {
+  const rows = ["1234567890", "QWERTYUIOP", "ASDFGHJKL", "ZXCVBNM"];
+  return `<button id="capture-keyboard" class="wide-button" aria-pressed="${
+    capturedKeyboard === c.id
+  }">${
+    capturedKeyboard === c.id
+      ? "Stop keyboard capture · Esc"
+      : "Capture physical keyboard"
+  }</button><p class="muted">ASCII uppercase. D0 is the least significant bit. Code stays latched after release; Pressed goes low. Arrow codes: ↑ 80, ↓ 81, ← 82, → 83 (hex).</p><div class="virtual-keyboard">${
+    rows.map((row) =>
+      `<div class="key-row">${
+        [...row].map((key) =>
+          `<button data-virtual-key="${key}" data-keyboard="${c.id}" aria-label="Virtual ${key}">${key}</button>`
+        ).join("")
+      }</div>`
+    ).join("")
+  }<div class="key-row">${
+    ["Space", "Enter", "Backspace", "↑", "↓", "←", "→"].map((key) =>
+      `<button data-virtual-key="${key}" data-keyboard="${c.id}">${key}</button>`
+    ).join("")
+  }</div></div><label class="field">Map physical key to<select id="map-virtual">${
+    virtualKeys.map((k) => `<option>${k.key}</option>`).join("")
+  }</select></label><button id="map-key" class="wide-button">${
+    mappingKeyboard === c.id
+      ? "Press a physical key · Esc cancels"
+      : "Assign physical key"
+  }</button>${
+    Object.entries(c.keyMap ?? {}).map(([physical, key]) =>
+      `<div class="key-mapping">${esc(physical)} → ${
+        esc(key)
+      }<button data-remove-map="${esc(physical)}" aria-label="Remove ${
+        esc(physical)
+      } mapping">×</button></div>`
+    ).join("")
+  }`;
+}
+function pressKey(id: string, physical: string, code: number) {
+  heldKeys.set(physical, code);
+  keyboards[id] = { code, pressed: true };
+  evaluate();
+  render();
+}
+function releaseKey(id: string, physical: string) {
+  heldKeys.delete(physical);
+  const remaining = [...heldKeys.values()].at(-1);
+  keyboards[id] = {
+    code: remaining ?? keyboards[id]?.code ?? 0,
+    pressed: remaining !== undefined,
+  };
+  evaluate();
+  render();
+}
+function releaseKeyboard() {
+  heldKeys.clear();
+  for (const state of Object.values(keyboards)) state.pressed = false;
+}
+$("#details").addEventListener("click", (e) => {
+  const target = e.target as Element;
+  if (target.closest("#save-rom")) {
+    const rom = circuit.components.find((c) =>
+      selected.has(c.id) && c.kind === "ROM"
+    );
+    if (!rom) return;
+    const tokens = $<HTMLTextAreaElement>("#rom-bytes").value.trim().split(
+      /\s+/,
+    ).filter(Boolean);
+    if (
+      tokens.length > 256 || tokens.some((t) => !/^[0-9a-f]{1,2}$/i.test(t))
+    ) {
+      $("#rom-error").textContent =
+        "Use up to 256 hex bytes, separated by spaces.";
+      return;
+    }
+    mutate(() => rom.contents = tokens.map((t) => parseInt(t, 16)));
+    return;
+  }
+  const c = circuit.components.find((c) =>
+    selected.has(c.id) && c.kind === "KEYBOARD"
+  );
+  if (!c) return;
+  if (target.closest("#capture-keyboard")) {
+    releaseKeyboard();
+    capturedKeyboard = capturedKeyboard === c.id ? null : c.id;
+    evaluate();
+    render();
+  }
+  if (target.closest("#map-key")) {
+    capturedKeyboard = null;
+    releaseKeyboard();
+    mappingValue = $<HTMLSelectElement>("#map-virtual").value;
+    mappingKeyboard = c.id;
+    renderDetails();
+    $("#map-key").textContent = "Press a physical key · Esc cancels";
+  }
+  const remove = target.closest<HTMLElement>("[data-remove-map]");
+  if (remove) {
+    mutate(() => {
+      delete c.keyMap?.[remove.dataset.removeMap!];
+    });
+  }
+});
+$("#details").addEventListener("keydown", (e) => {
+  const button = (e.target as Element).closest<HTMLElement>(
+    "[data-virtual-key]",
+  );
+  if (!button || !["Enter", " "].includes(e.key)) return;
+  e.preventDefault();
+  e.stopPropagation();
+  if (!e.repeat) {
+    pressKey(
+      button.dataset.keyboard!,
+      "virtual",
+      virtualKeys.find((k) => k.key === button.dataset.virtualKey)!.code,
+    );
+  }
+});
+$("#details").addEventListener("pointerdown", (e) => {
+  const button = (e.target as Element).closest<HTMLElement>(
+    "[data-virtual-key]",
+  );
+  if (!button) return;
+  e.preventDefault();
+  const key = virtualKeys.find((k) => k.key === button.dataset.virtualKey)!;
+  pressKey(button.dataset.keyboard!, "virtual", key.code);
+});
+document.addEventListener("pointerup", () => {
+  if (heldKeys.has("virtual")) {
+    for (const c of circuit.components) {
+      if (c.kind === "KEYBOARD" && keyboards[c.id]?.pressed) {
+        releaseKey(c.id, "virtual");
+      }
+    }
+  }
+});
 function deleteSelection() {
   if (!selected.size) return;
   mutate(() => {
@@ -555,6 +843,7 @@ function copySelection() {
   clipboard = clone({
     version: 1,
     name: "Clipboard",
+    definitions: circuit.definitions,
     components: nodes,
     wires: circuit.wires.filter((w) => ids.has(w.from) && ids.has(w.to)),
   });
@@ -584,6 +873,9 @@ function pasteSelection() {
       from: ids.get(w.from)!,
       to: ids.get(w.to)!,
     }));
+    circuit.definitions = clone(
+      clipboard!.definitions ?? circuit.definitions ?? [],
+    );
     circuit.components.push(...nodes);
     circuit.wires.push(...wires);
     selected = new Set(nodes.map((c) => c.id));
@@ -626,7 +918,14 @@ function connectPin(id: string, port: number) {
     input = port < 0 ? wiring.port : port;
   try {
     mutate(() => {
-      circuit = connect(circuit, from, to, input, uid());
+      circuit = connect(
+        circuit,
+        from,
+        to,
+        input,
+        uid(),
+        -(port < 0 ? port : wiring!.port) - 1,
+      );
       wiring = null;
     });
     board.focus();
@@ -681,7 +980,24 @@ $("#app").addEventListener("click", (e) => {
   const target = e.target as Element,
     b = target.closest<HTMLElement>("button,[data-example],.pin,.wire");
   if (!b) return;
+  if (b.dataset.editCustom) {
+    const def = library.find((d) => d.id === b.dataset.editCustom);
+    if (def) appearanceDialog(def);
+    return;
+  }
+  if (b.dataset.custom) {
+    placement = "CUSTOM";
+    placementDefinition = b.dataset.custom;
+    wiring = null;
+    panMode = false;
+    if (matchMedia("(max-width: 650px)").matches) {
+      $(".shell").classList.remove("hide-library");
+    }
+    render();
+    return;
+  }
   if (b.dataset.place) {
+    placementDefinition = null;
     placement = b.dataset.place as Kind;
     if (matchMedia("(max-width: 650px)").matches) {
       $(".shell").classList.remove("hide-library");
@@ -707,6 +1023,8 @@ $("#app").addEventListener("click", (e) => {
     return;
   }
   const actions: Record<string, () => void> = {
+    "create-custom": customDialog,
+    "create-custom-tool": customDialog,
     "examples-button": () =>
       dialog(
         "Example circuits",
@@ -739,8 +1057,26 @@ $("#app").addEventListener("click", (e) => {
       else running = setInterval(tick, 250);
       render();
     },
+    "computer-tool": () => {
+      stop();
+      releaseKeyboard();
+      capturedKeyboard = null;
+      evaluate();
+      render();
+      openComputer();
+    },
+    "karnaugh-tool": () => {
+      stop();
+      releaseKeyboard();
+      capturedKeyboard = null;
+      evaluate();
+      render();
+      openKarnaugh(circuit);
+    },
     reset: () => {
       stop();
+      releaseKeyboard();
+      keyboards = {};
       memory = { q: {}, clock: {} };
       for (const c of circuit.components) if (c.kind === "CLOCK") c.value = 0;
       evaluate();
@@ -797,7 +1133,7 @@ $("#app").addEventListener("click", (e) => {
     help: () =>
       dialog(
         "Reference",
-        `<h3>Draw a circuit</h3><p>Pick a component from the library, then click the canvas. Esc returns to selection. Components snap to the 20 px grid.</p><p>Click two pins to connect them: one output and one input. Outputs can drive several inputs. Each input accepts one wire. A wire crossing is visual; it does not join the wires.</p><h3>Simulate</h3><p>Click an input block to switch between 0 and 1. Signals propagate immediately. Step toggles each clock; Run clock alternates the clock at 2 Hz. D flip-flops sample on a rising edge and start at 0. Reset clears flip-flop state and resets clocks to 0.</p><p>X means an unconnected or unknown signal. Combinational feedback is reported. Use flip-flops for stored state. These circuits are single-bit; buses and Logisim .circ files are not supported.</p><h3>Files and keyboard</h3><p>The current circuit is saved in this browser. Save downloads a .literal JSON file. Open imports a saved circuit. Simulation memory is reset when opening, undoing, or reloading.</p><p>⌘/Ctrl+Z undo · Shift+⌘/Ctrl+Z redo · ⌘/Ctrl+C/V copy/paste · ⌘/Ctrl+D duplicate · ⌘/Ctrl+S save · ⌘/Ctrl+O open · Delete removes selection · V select · H pan · F fit · Esc cancel. Arrow keys move selected components by one grid step; Shift moves five steps.</p><p>Keyboard users can select components and pins with Tab, then press Enter. To place without a pointer, use the Place at center button after choosing a component.</p>`,
+        `<h3>Draw a circuit</h3><p>Pick a component from the library, then click the canvas. Esc returns to selection. Components snap to the 20 px grid.</p><p>Click two pins to connect them: one output and one input. Outputs can drive several inputs. Each input accepts one wire. A wire crossing is visual; it does not join the wires.</p><h3>Simulate</h3><p>Click an input block to switch between 0 and 1. Signals propagate immediately. Step toggles each clock; Run clock alternates the clock at 2 Hz. D flip-flops sample on a rising edge and start at 0. Reset clears stored state, RAM, and screens and resets clocks to 0.</p><p>X means an unconnected or unknown signal. Combinational feedback is reported. Use flip-flops for stored state. These circuits are single-bit; buses and Logisim .circ files are not supported.</p><h3>Displays</h3><p>LED lights on 1. The 7-segment display has eight independent pins: a at the top, b upper right, c lower right, d bottom, e lower left, f upper left, g middle, and dp for the decimal point. The hex display decodes four bits, with weights 1, 2, 4, 8 from top to bottom. Amber segments mean unknown inputs. Truth tables export each display input as a separate column.</p><h3>Byte devices</h3><p>Registers capture eight data bits on a rising Clock when Enable is high. Counters increment on that edge. Clear resets either immediately. RAM stores 256 bytes: eight address bits, eight data bits, Write, and Clock. Read is asynchronous; write needs Write high on a rising Clock. ROM bytes are edited as hex in the inspector. ADDER8 accepts two bytes and carry, and produces a sum and carry.</p><h3>Screen and keyboard</h3><p>VGA stores 32 × 24 RGB pixels. Connect X0–4, Y0–4 and RGB, then pulse Write. Clear resets the screen. Select Keyboard for physical-key capture, remapping, or virtual keys. It exposes eight uppercase ASCII bits and Pressed. Escape releases capture.</p><h3>Tools</h3><p>Computer runs Literal 8 assembly with registers, RAM, ROM, a stack, memory-mapped devices, and a BIOS game. It operates independently of the circuit canvas. Karnaugh simplifies 1–4 variable combinational outputs using editable Gray-order maps and don't-care cells.</p><h3>Custom components</h3><p>Select logic and choose Create component. Input/Output labels name pins; boundary connections become pins. Choose a name, color and shape. The pencil in the library edits appearance. Stateful and interactive devices stay outside custom components.</p><h3>Files and keyboard</h3><p>The current circuit is saved in this browser. Save downloads a .literal JSON file. Open imports a saved circuit. Simulation memory is reset when opening, undoing, or reloading.</p><p>⌘/Ctrl+Z undo · Shift+⌘/Ctrl+Z redo · ⌘/Ctrl+C/V copy/paste · ⌘/Ctrl+D duplicate · ⌘/Ctrl+S save · ⌘/Ctrl+O open · Delete removes selection · V select · H pan · F fit · Esc cancel. Arrow keys move selected components by one grid step; Shift moves five steps.</p><p>Keyboard users can select components and pins with Tab, then press Enter. To place without a pointer, use the Place at center button after choosing a component.</p>`,
       ),
   };
   actions[b.id]?.();
@@ -868,6 +1204,85 @@ $("#file-input").addEventListener("change", async (e) => {
   }
   input.value = "";
 });
+function appearanceDialog(def: Definition) {
+  dialog(
+    "Component appearance",
+    `<form id="appearance-form" data-definition="${def.id}"><label class="field">Component name<input id="appearance-name" value="${
+      esc(def.name)
+    }" maxlength="80" required></label><label class="field">Color<input id="appearance-color" type="color" value="${def.color}"></label><label class="field">Shape<select id="appearance-shape">${
+      ["rounded", "rectangle", "diamond"].map((shape) =>
+        `<option value="${shape}" ${
+          shape === def.shape ? "selected" : ""
+        }>${shape}</option>`
+      ).join("")
+    }</select></label><p class="muted">Updates this component in the library and every instance in the current circuit.</p><button class="primary" type="submit">Save appearance</button></form>`,
+  );
+}
+$("#dialog-body").addEventListener("submit", (e) => {
+  const form = e.target as HTMLFormElement;
+  if (form.id !== "appearance-form") return;
+  e.preventDefault();
+  const original = library.find((d) => d.id === form.dataset.definition);
+  if (!original) return;
+  const name = $<HTMLInputElement>("#appearance-name").value.trim();
+  if (!name) return;
+  const def = {
+    ...original,
+    name,
+    color: $<HTMLInputElement>("#appearance-color").value,
+    shape: $<HTMLSelectElement>("#appearance-shape")
+      .value as Definition["shape"],
+  };
+  library = library.map((d) => d.id === def.id ? def : d);
+  mutate(() => {
+    circuit.definitions = clone(library);
+  });
+  retainDefinitions();
+  $<HTMLDialogElement>("#dialog").close();
+  render();
+});
+function customDialog() {
+  if (library.length >= 100) {
+    notify("Library limit: 100 custom components.");
+    return;
+  }
+  if (!circuit.components.some((c) => selected.has(c.id))) {
+    notify(
+      "Select the components to save. Use ⌘/Ctrl+A to select the whole circuit.",
+    );
+    return;
+  }
+  dialog(
+    "Create component",
+    `<form id="custom-form"><p class="muted">Save the selected circuit to your library. Input and Output labels become pin names. Unconnected pins and connections crossing the selection become pins automatically.</p><label class="field">Component name<input id="custom-name" maxlength="80" required value="${
+      esc(circuit.name.slice(0, 80))
+    }"></label><label class="field">Color<input id="custom-color" type="color" value="#527d3c"></label><label class="field">Shape<select id="custom-shape"><option value="rounded">Rounded rectangle</option><option value="rectangle">Rectangle</option><option value="diamond">Diamond</option></select></label><p class="muted">Combinational circuits only. Stateful and interactive devices can connect to the component from outside.</p><p id="custom-error" role="alert"></p><button class="primary" type="submit">Save component</button></form>`,
+  );
+}
+$("#dialog-body").addEventListener("submit", (e) => {
+  if ((e.target as Element).id !== "custom-form") return;
+  e.preventDefault();
+  try {
+    const def = createDefinition(circuit, selected, {
+      id: uid(),
+      name: $<HTMLInputElement>("#custom-name").value.trim(),
+      color: $<HTMLInputElement>("#custom-color").value,
+      shape: $<HTMLSelectElement>("#custom-shape").value as Definition["shape"],
+    });
+    mutate(() => {
+      circuit.definitions = [...(circuit.definitions ?? []), def];
+    });
+    retainDefinitions();
+    $<HTMLDialogElement>("#dialog").close();
+    placement = "CUSTOM";
+    placementDefinition = def.id;
+    selected.clear();
+    render();
+    notify(`Saved ${def.name}. Click the canvas to place it.`);
+  } catch (error) {
+    $("#custom-error").textContent = (error as Error).message;
+  }
+});
 function place(p: Point) {
   if (!placement) return;
   if (circuit.components.length >= 500) {
@@ -875,12 +1290,16 @@ function place(p: Point) {
     return;
   }
   mutate(() => {
+    if (placement === "CUSTOM") circuit.definitions = clone(library);
     const c: Component = {
       id: uid(),
       kind: placement!,
       x: snap(p.x),
       y: snap(p.y),
-      label: placement!,
+      label: placement === "CUSTOM"
+        ? library.find((d) => d.id === placementDefinition)?.name ?? "Custom"
+        : placement!,
+      ...(placement === "CUSTOM" ? { definition: placementDefinition! } : {}),
       ...(["INPUT", "CLOCK"].includes(placement!) ? { value: 0 as const } : {}),
     };
     circuit.components.push(c);
@@ -1023,7 +1442,41 @@ board.addEventListener("keydown", (e) => {
   }
 });
 document.addEventListener("keydown", (e) => {
-  const target = e.target as Element;
+  if (document.querySelector(".tool-workspace:not([hidden])")) return;
+  if (mappingKeyboard) {
+    e.preventDefault();
+    const c = circuit.components.find((c) => c.id === mappingKeyboard);
+    const virtual = mappingValue;
+    mappingKeyboard = null;
+    if (e.key !== "Escape" && e.code && c) {
+      mutate(() => c.keyMap = { ...c.keyMap, [e.code]: virtual });
+    } else renderDetails();
+    return;
+  }
+  if (capturedKeyboard) {
+    if (e.key === "Escape") {
+      releaseKeyboard();
+      capturedKeyboard = null;
+      render();
+      return;
+    }
+    if (
+      e.target instanceof Element &&
+      e.target.closest("input,textarea,select,dialog")
+    ) return;
+    const c = circuit.components.find((c) => c.id === capturedKeyboard);
+    if (!c) {
+      capturedKeyboard = null;
+      return;
+    }
+    const code = keyboardCode(e.code, c.keyMap);
+    if (code !== null) {
+      e.preventDefault();
+      if (!e.repeat) pressKey(c.id, e.code, code);
+    }
+    return;
+  }
+  const target = e.target instanceof Element ? e.target : document.body;
   if (target.closest("input,textarea,select,dialog")) return;
   const mod = e.metaKey || e.ctrlKey, key = e.key.toLowerCase();
   if (mod && ["z", "y", "s", "o", "a", "c", "v", "d"].includes(key)) {
@@ -1072,20 +1525,38 @@ document.addEventListener("keydown", (e) => {
   }
 });
 document.addEventListener("keyup", (e) => {
+  if (heldKeys.has("virtual") && ["Enter", " "].includes(e.key)) {
+    for (const c of circuit.components) {
+      if (c.kind === "KEYBOARD" && keyboards[c.id]?.pressed) {
+        releaseKey(c.id, "virtual");
+      }
+    }
+  }
+  if (capturedKeyboard && heldKeys.has(e.code)) {
+    e.preventDefault();
+    releaseKey(capturedKeyboard, e.code);
+    return;
+  }
   if (e.key === " ") {
     space = false;
     board.classList.toggle("panning", panMode);
   }
 });
 window.addEventListener("blur", () => {
+  releaseKeyboard();
+  evaluate();
+  render();
   space = false;
 });
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) {
+    releaseKeyboard();
+    evaluate();
     stop();
     render();
   }
 });
+retainDefinitions();
 new ResizeObserver(view).observe(board);
 persist();
 render();

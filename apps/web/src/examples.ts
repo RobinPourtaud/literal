@@ -149,6 +149,40 @@ export const examples: {
       ],
     },
   },
+  {
+    id: "displays",
+    name: "Displays",
+    description: "Segment switches, a decimal point, and a four-bit hex digit.",
+    circuit: {
+      version: 1,
+      name: "Displays",
+      components: [
+        ...["a", "b", "c", "d", "e", "f", "g", "dp"].map((label, i) =>
+          n(`segment-${i}`, "INPUT", 120, 100 + i * 120, label, i === 7 ? 0 : 1)
+        ),
+        n("segments", "SEVEN_SEG", 440, 520, "7-segment"),
+        ...[0, 1, 2, 3].map((i) =>
+          n(
+            `bit-${i}`,
+            "INPUT",
+            660,
+            320 + i * 120,
+            `Bit ${i} · ${2 ** i}`,
+            i === 0 || i === 2 ? 1 : 0,
+          )
+        ),
+        n("hex", "HEX_DISPLAY", 940, 520, "Hex digit"),
+        n("led", "LED", 940, 780, "Bit 0 LED"),
+      ],
+      wires: [
+        ...[0, 1, 2, 3, 4, 5, 6, 7].map((i) =>
+          w(`segment-wire-${i}`, `segment-${i}`, "segments", i)
+        ),
+        ...[0, 1, 2, 3].map((i) => w(`bit-wire-${i}`, `bit-${i}`, "hex", i)),
+        w("led-wire", "bit-0", "led"),
+      ],
+    },
+  },
 ];
 export const clone = <T>(value: T): T => structuredClone(value);
 export const blank = (): Circuit => ({
@@ -156,4 +190,93 @@ export const blank = (): Circuit => ({
   name: "Untitled circuit",
   components: [],
   wires: [],
+});
+
+const keyboardPixels: Circuit = {
+  version: 1,
+  name: "Keyboard pixels",
+  components: [
+    { id: "keyboard", kind: "KEYBOARD", label: "Keyboard", x: 240, y: 280 },
+    { id: "low", kind: "INPUT", label: "Low", value: 0, x: 500, y: 600 },
+    { id: "high", kind: "INPUT", label: "High", value: 1, x: 500, y: 720 },
+    { id: "screen", kind: "VGA", label: "Key code → X", x: 900, y: 420 },
+    {
+      id: "code",
+      kind: "HEX_DISPLAY",
+      label: "Code low nibble",
+      x: 500,
+      y: 180,
+    },
+  ],
+  wires: [
+    ...Array.from(
+      { length: 5 },
+      (_, i) => ({
+        id: `x${i}`,
+        from: "keyboard",
+        ...(i === 0 ? {} : { fromPort: i }),
+        to: "screen",
+        port: i,
+      }),
+    ),
+    ...Array.from(
+      { length: 5 },
+      (_, i) => ({ id: `y${i}`, from: "low", to: "screen", port: i + 5 }),
+    ),
+    { id: "r", from: "high", to: "screen", port: 10 },
+    { id: "g", from: "low", to: "screen", port: 11 },
+    { id: "b", from: "high", to: "screen", port: 12 },
+    { id: "write", from: "keyboard", fromPort: 8, to: "screen", port: 13 },
+    { id: "clear", from: "low", to: "screen", port: 14 },
+    ...Array.from(
+      { length: 4 },
+      (_, i) => ({
+        id: `code${i}`,
+        from: "keyboard",
+        ...(i === 0 ? {} : { fromPort: i }),
+        to: "code",
+        port: i,
+      }),
+    ),
+  ],
+};
+examples.push({
+  id: "keyboard-pixels",
+  name: "Keyboard pixels",
+  description:
+    "Mapped keyboard bytes drive a pixel screen. Select Keyboard to capture or press virtual keys.",
+  circuit: keyboardPixels,
+});
+const counterByte: Circuit = {
+  version: 1,
+  name: "Byte counter",
+  components: [
+    { id: "clock", kind: "CLOCK", label: "Clock", value: 0, x: 160, y: 180 },
+    { id: "enable", kind: "INPUT", label: "Enable", value: 1, x: 160, y: 300 },
+    { id: "clear", kind: "INPUT", label: "Clear", value: 0, x: 160, y: 420 },
+    { id: "counter", kind: "COUNTER8", label: "8-bit counter", x: 450, y: 300 },
+    { id: "lo", kind: "HEX_DISPLAY", label: "Low nibble", x: 780, y: 440 },
+    { id: "hi", kind: "HEX_DISPLAY", label: "High nibble", x: 780, y: 180 },
+  ],
+  wires: [
+    { id: "clock-wire", from: "clock", to: "counter", port: 0 },
+    { id: "enable-wire", from: "enable", to: "counter", port: 1 },
+    { id: "clear-wire", from: "clear", to: "counter", port: 2 },
+    ...Array.from(
+      { length: 8 },
+      (_, i) => ({
+        id: `bit${i}`,
+        from: "counter",
+        ...(i === 0 ? {} : { fromPort: i }),
+        to: i < 4 ? "lo" : "hi",
+        port: i % 4,
+      }),
+    ),
+  ],
+};
+examples.push({
+  id: "byte-counter",
+  name: "Byte counter",
+  description: "An eight-bit clocked counter and hexadecimal readout.",
+  circuit: counterByte,
 });

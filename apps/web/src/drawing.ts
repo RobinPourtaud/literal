@@ -1,8 +1,16 @@
 import {
   type Circuit,
   type Component,
-  hasOutput,
-  inputCount,
+  componentInputLabel,
+  componentInputs,
+  componentOutputLabel,
+  componentOutputs,
+  definitionOf,
+  displaySegments,
+  hexValue,
+  inputLabel,
+  screenColors,
+  screenWidth,
   type Signal,
   type Simulation,
 } from "@literal/core";
@@ -10,17 +18,35 @@ export const esc = (s: string) =>
   s.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;");
 export type Point = { x: number; y: number };
-export function pin(c: Component, port: number): Point {
-  const count = inputCount(c.kind);
+export function pin(
+  c: Component,
+  port: number,
+  circuit: Circuit = { version: 1, name: "", components: [], wires: [] },
+): Point {
+  const count = port < 0
+    ? componentOutputs(c, circuit)
+    : componentInputs(c, circuit);
   return {
-    x: c.x + (port < 0 ? 50 : -50),
-    y: c.y + (port < 0 ? 0 : (port - (count - 1) / 2) * 24),
+    x: c.x +
+      (port < 0
+        ? c.kind === "KEYBOARD" ? 110 : 50
+        : c.kind === "VGA"
+        ? -180
+        : ["SEVEN_SEG", "HEX_DISPLAY"].includes(c.kind)
+        ? -70
+        : -50),
+    y: c.y +
+      (port < 0
+        ? (-port - 1 - (count - 1) / 2) * 24
+        : (port - (count - 1) / 2) * 24),
   };
 }
 export const signalClass = (s: Signal) =>
   s === 1 ? "high" : s === 0 ? "low" : "unknown";
-export function path(a: Point, b: Point): string {
-  const middle = a.x <= b.x - 30 ? (a.x + b.x) / 2 : Math.max(a.x, b.x) + 40;
+export function path(a: Point, b: Point, offset = 0): string {
+  const middle = a.x <= b.x - 30
+    ? Math.max(a.x + 20, Math.min(b.x - 20, (a.x + b.x) / 2 + offset))
+    : Math.max(a.x, b.x) + 40;
   if (a.x > b.x - 30) {
     return `M${a.x},${a.y} H${middle} V${Math.min(a.y, b.y) - 70} H${
       b.x - 30
@@ -28,7 +54,50 @@ export function path(a: Point, b: Point): string {
   }
   return `M${a.x},${a.y} H${middle} V${b.y} H${b.x}`;
 }
-function shape(c: Component, signal: Signal) {
+export const dimensions = (
+  c: Component,
+  circuit: Circuit = { version: 1, name: "", components: [], wires: [] },
+) =>
+  ["REGISTER8", "COUNTER8", "ADDER8", "RAM", "ROM"].includes(c.kind)
+    ? {
+      width: 210,
+      height:
+        Math.max(componentInputs(c, circuit), componentOutputs(c, circuit)) *
+          24 + 50,
+      labelY:
+        Math.max(componentInputs(c, circuit), componentOutputs(c, circuit)) *
+          12 + 25,
+    }
+    : c.kind === "VGA"
+    ? { width: 400, height: 396, labelY: 200 }
+    : c.kind === "KEYBOARD"
+    ? { width: 290, height: 280, labelY: 142 }
+    : c.kind === "CUSTOM"
+    ? {
+      width: 156,
+      height: Math.max(
+        108,
+        Math.max(componentInputs(c, circuit), componentOutputs(c, circuit)) *
+            24 + 50,
+      ),
+      labelY: Math.max(
+        54,
+        Math.max(componentInputs(c, circuit), componentOutputs(c, circuit)) *
+            12 + 25,
+      ),
+    }
+    : c.kind === "SEVEN_SEG"
+    ? { width: 156, height: 242, labelY: 122 }
+    : c.kind === "HEX_DISPLAY"
+    ? { width: 156, height: 182, labelY: 92 }
+    : { width: 122, height: 108, labelY: 57 };
+function shape(
+  c: Component,
+  signal: Signal,
+  inputs: Signal[],
+  circuit: Circuit,
+  sim: Simulation,
+) {
   const kind = c.kind;
   if (kind === "INPUT" || kind === "CLOCK") {
     return `<rect class="gate-shape source ${
@@ -38,6 +107,101 @@ function shape(c: Component, signal: Signal) {
         ? '<path class="clock-glyph" d="M-15 15v-6h8v6h8v-6h8"/>'
         : ""
     }`;
+  }
+  if (["REGISTER8", "COUNTER8", "ADDER8", "RAM", "ROM"].includes(kind)) {
+    const height = dimensions(c, circuit).height - 32;
+    const bits = sim.outputValues[c.id] ?? [],
+      value = bits.slice(0, 8).includes("X")
+        ? "XX"
+        : bits.slice(0, 8).reduce<number>(
+          (n, b, i) => n + (b === 1 ? 2 ** i : 0),
+          0,
+        ).toString(16).toUpperCase().padStart(2, "0");
+    return `<rect class="gate-shape" x="-40" y="${
+      -height / 2
+    }" width="80" height="${height}" rx="8"/><text class="custom-title" y="-10">${
+      kind.replace("8", " 8")
+    }</text><text class="signal-number" y="22">${value}</text>`;
+  }
+  if (kind === "VGA") {
+    const pixels = sim.memory.screens?.[c.id] ?? [];
+    return `<rect class="display-case" x="-136" y="-108" width="272" height="216" rx="10"/><rect fill="${
+      screenColors[0]
+    }" x="-128" y="-96" width="256" height="192"/>${
+      pixels.map((color, i) =>
+        color
+          ? `<rect class="vga-pixel" x="${(i % screenWidth) * 8 - 128}" y="${
+            Math.floor(i / screenWidth) * 8 - 96
+          }" width="8" height="8" fill="${screenColors[color]}"/>`
+          : ""
+      ).join("")
+    }<text class="display-pin-label" x="-125" y="125">32 × 24 · RGB</text>`;
+  }
+  if (kind === "KEYBOARD") {
+    const bits = sim.outputValues[c.id] ?? [],
+      code = bits.slice(0, 8).reduce<number>(
+        (n, b, i) => n + (b === 1 ? 2 ** i : 0),
+        0,
+      );
+    return `<rect class="gate-shape" x="-80" y="-116" width="160" height="232" rx="12"/><text class="custom-title" y="-88">Keyboard</text><text class="signal-number" y="-53">${
+      code.toString(16).toUpperCase().padStart(2, "0")
+    }</text>${
+      ["QWERTY", "ASDFGH", "ZXCVBN"].map((row, y) =>
+        [...row].map((key, x) =>
+          `<rect class="keyboard-key ${
+            bits[8] === 1 && code === key.charCodeAt(0) ? "active" : ""
+          }" x="${x * 23 - 68}" y="${
+            y * 29 - 23
+          }" width="20" height="24" rx="3"/><text class="keyboard-letter" x="${
+            x * 23 - 58
+          }" y="${y * 29 - 7}">${key}</text>`
+        ).join("")
+      ).join("")
+    }<text class="display-pin-label" x="-68" y="94">${
+      bits[8] === 1 ? "PRESSED" : "RELEASED"
+    }</text>`;
+  }
+  if (kind === "CUSTOM") {
+    const def = definitionOf(c, circuit),
+      h = dimensions(c, circuit).height - 32,
+      color = def?.color ?? "#527d3c";
+    const body = def?.shape === "diamond"
+      ? `<path d="M0 ${-h / 2} L48 0 L0 ${h / 2} L-48 0Z"/>`
+      : `<rect x="-40" y="${-h / 2}" width="80" height="${h}" rx="${
+        def?.shape === "rounded" ? 12 : 2
+      }"/>`;
+    return `<g class="custom-case" style="--custom-color:${color}">${body}</g><text class="custom-title" y="4">${
+      esc((def?.name ?? "Custom").slice(0, 11))
+    }</text>`;
+  }
+  if (kind === "SEVEN_SEG" || kind === "HEX_DISPLAY") {
+    const segments = displaySegments(kind, inputs),
+      height = kind === "SEVEN_SEG" ? 200 : 140;
+    const strokes = [
+      "M-20-58H20",
+      "M26-48V-8",
+      "M26 8V48",
+      "M20 58H-20",
+      "M-26 48V8",
+      "M-26-8V-48",
+      "M-20 0H20",
+    ];
+    return `<rect class="display-case" x="-48" y="${
+      -height / 2
+    }" width="96" height="${height}" rx="9"/>${
+      strokes.map((d, i) =>
+        `<path class="display-segment ${
+          signalClass(segments[i])
+        }" data-segment="${i}" d="${d}"/>`
+      ).join("")
+    }<circle class="display-point ${
+      signalClass(segments[7])
+    }" data-segment="7" cx="36" cy="58" r="4"/>`;
+  }
+  if (kind === "LED") {
+    return `<circle class="gate-shape" r="25"/><circle class="led-light ${
+      signalClass(signal)
+    }" r="17"/><text class="led-state" y="5">${signal}</text>`;
   }
   if (kind === "OUTPUT") {
     return `<circle class="gate-shape lamp ${
@@ -75,23 +239,53 @@ export function draw(
   const wires = circuit.wires.map((w) => {
     const a = nodes.get(w.from), b = nodes.get(w.to);
     if (!a || !b) return "";
-    const d = path(pin(a, -1), pin(b, w.port));
-    return `<g class="wire ${signalClass(sim.values[w.from])} ${
+    const d = path(
+      pin(a, -(w.fromPort ?? 0) - 1, circuit),
+      pin(b, w.port, circuit),
+      (w.port - (componentInputs(b, circuit) - 1) / 2) * 18,
+    );
+    return `<g class="wire ${
+      signalClass(
+        sim.outputValues[w.from]?.[w.fromPort ?? 0] ?? sim.values[w.from],
+      )
+    } ${
       selected.has(w.id) ? "selected" : ""
     }" data-wire="${w.id}"><path class="wire-hit" d="${d}"/><path class="wire-line" d="${d}"/><title>Wire ${
       esc(a.label)
     } → ${esc(b.label)} input ${w.port + 1}</title></g>`;
   }).join("");
   const components = circuit.components.map((c) => {
-    const ports = Array.from({ length: inputCount(c.kind) }, (_, i) => i);
-    if (hasOutput(c.kind)) ports.push(-1);
+    const size = dimensions(c, circuit);
+    const ports = Array.from(
+      { length: componentInputs(c, circuit) },
+      (_, i) => i,
+    );
+    ports.push(
+      ...Array.from({ length: componentOutputs(c, circuit) }, (_, i) => -i - 1),
+    );
     const p = ports.map((i) => {
-      const pos = pin(c, i),
-        signal = i < 0 ? sim.values[c.id] : sim.inputs[c.id]?.[i] ?? "X";
+      const pos = pin(c, i, circuit),
+        signal = i < 0
+          ? sim.outputValues[c.id]?.[-i - 1] ?? sim.values[c.id]
+          : sim.inputs[c.id]?.[i] ?? "X";
       return `<line class="pin-line ${signalClass(signal)}" x1="${
         i < 0
-          ? (["NOT", "NAND", "NOR", "XNOR"].includes(c.kind) ? 44 : 28)
-          : -30
+          ? c.kind === "KEYBOARD"
+            ? 80
+            : (["NOT", "NAND", "NOR", "XNOR"].includes(c.kind)
+              ? 44
+              : ["CUSTOM", "REGISTER8", "COUNTER8", "ADDER8", "RAM", "ROM"]
+                  .includes(c.kind)
+              ? 40
+              : 28)
+          : c.kind === "VGA"
+          ? -136
+          : (["SEVEN_SEG", "HEX_DISPLAY"].includes(c.kind)
+            ? -48
+            : ["CUSTOM", "REGISTER8", "COUNTER8", "ADDER8", "RAM", "ROM"]
+                .includes(c.kind)
+            ? -40
+            : -30)
       }" y1="${pos.y - c.y}" x2="${pos.x - c.x}" y2="${
         pos.y - c.y
       }"/><g class="pin ${
@@ -103,20 +297,76 @@ export function draw(
       } ${pos.y - c.y})" tabindex="0" role="button" aria-label="${
         esc(c.label)
       } ${
-        i < 0 ? "output" : `input ${i + 1}`
-      } pin"><rect class="pin-target" x="-12" y="-10" width="24" height="20"/><circle class="pin-dot" r="6"/></g>`;
+        i < 0
+          ? c.kind === "CUSTOM" || componentOutputs(c, circuit) > 1
+            ? esc(componentOutputLabel(c, -i - 1, circuit))
+            : "output"
+          : esc(componentInputLabel(c, i, circuit).replace(/^Input /, "input "))
+      } pin"><rect class="pin-target" x="-12" y="-10" width="24" height="20"/><circle class="pin-dot" r="6"/></g>${
+        [
+            "SEVEN_SEG",
+            "HEX_DISPLAY",
+            "CUSTOM",
+            "VGA",
+            "KEYBOARD",
+            "REGISTER8",
+            "COUNTER8",
+            "ADDER8",
+            "RAM",
+            "ROM",
+          ].includes(
+            c.kind,
+          )
+          ? `<text class="display-pin-label" x="${
+            c.kind === "VGA"
+              ? -165
+              : c.kind === "KEYBOARD"
+              ? 118
+              : i < 0
+              ? 58
+              : -55
+          }" y="${pos.y - c.y + 3}">${
+            [
+                "CUSTOM",
+                "VGA",
+                "KEYBOARD",
+                "REGISTER8",
+                "COUNTER8",
+                "ADDER8",
+                "RAM",
+                "ROM",
+              ].includes(c.kind)
+              ? esc((i < 0
+                ? componentOutputLabel(c, -i - 1, circuit)
+                : componentInputLabel(c, i, circuit)).slice(0, 9))
+              : c.kind === "SEVEN_SEG"
+              ? inputLabel(c.kind, i)
+              : 2 ** i
+          }</text>`
+          : ""
+      }`;
     }).join("");
     return `<g class="component ${signalClass(sim.values[c.id])} ${
       selected.has(c.id) ? "selected" : ""
-    }" data-node="${c.id}" transform="translate(${c.x} ${c.y})"><rect class="selection-box" x="-61" y="-48" width="122" height="108" rx="8"/><g class="component-body" tabindex="0" role="button" aria-label="${
+    }" data-node="${c.id}" transform="translate(${c.x} ${c.y})"><rect class="selection-box" x="${
+      -size.width / 2
+    }" y="${
+      -size.height / 2 + 6
+    }" width="${size.width}" height="${size.height}" rx="8"/><g class="component-body" tabindex="0" role="button" aria-label="${
       esc(c.label)
     } ${c.kind}${
+      c.kind === "HEX_DISPLAY"
+        ? ` ${hexValue(sim.inputs[c.id])?.toString(16).toUpperCase() ?? "X"}`
+        : ""
+    }${
       c.kind === "INPUT" || c.kind === "CLOCK"
         ? ` ${sim.values[c.id]}. Enter to toggle.`
         : ""
     }">${
-      shape(c, sim.values[c.id])
-    }</g>${p}<text class="component-label" y="57">${esc(c.label)}</text></g>`;
+      shape(c, sim.values[c.id], sim.inputs[c.id], circuit, sim)
+    }</g>${p}<text class="component-label" y="${size.labelY}">${
+      esc(c.label)
+    }</text></g>`;
   }).join("");
   return wires + components;
 }

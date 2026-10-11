@@ -10,6 +10,15 @@ runs. All circuit execution and storage happen locally in the browser.
 
 - Full-height SVG canvas with grid snapping, selection boxes, group movement,
   zoom, and pan.
+- LEDs, seven-segment and hexadecimal displays, and a VGA-style pixel screen.
+- Mapped physical / virtual keyboard, byte registers and counters, an eight-bit
+  adder, 256-byte RAM, and editable ROM.
+- Assembly workspace with an eight-bit CPU interpreter, BIOS boot routine,
+  opcode game, breakpoints, memory inspection, and ROM export.
+- Karnaugh maps with circuit-output import and exact sum-of-products
+  minimization.
+- Reusable custom components with named pins, colors, shapes, and nested
+  circuits.
 - Input switches, output indicators, clocks, AND, OR, NOT, NAND, NOR, XOR, XNOR,
   buffers, multiplexers, and D flip-flops.
 - Live `0`, `1`, and unknown `X` signals, with feedback diagnostics.
@@ -22,8 +31,9 @@ runs. All circuit execution and storage happen locally in the browser.
 - Keyboard controls and reduced-motion support. The compact sage interface
   follows ISETL Web.
 
-Literal currently uses single-bit signals. Buses, subcircuits, asynchronous
-latch simulation, and Logisim `.circ` import are not implemented.
+Literal uses single-bit wires. Custom components currently support combinational
+logic. Buses, sequential custom components, asynchronous latch simulation, and
+Logisim `.circ` import are not implemented.
 
 ## Run locally
 
@@ -67,6 +77,66 @@ Autosave keeps the current circuit in this browser's local storage. Download a
 `.literal` file to keep a portable copy. Opening a file replaces the current
 circuit; Undo restores it during the session.
 
+## Custom components
+
+Select components and choose **Create component** in the library. Give the
+component a name, color, and shape. Input and Output blocks define named pins;
+connections crossing the selection and unconnected gate inputs are converted to
+pins automatically. The saved component appears under **CUSTOM**, ready to place
+in this circuit or a new one.
+
+Use the pencil beside a library entry to rename it or change its color and
+shape.
+
+Definitions are snapshots of the selected logic. Custom components can contain
+other custom components and have multiple outputs. Their pins are ordered by the
+Input and Output blocks in the definition. Stateful and interactive devices must
+remain outside custom components.
+
+The library is saved in this browser. Circuit downloads embed the definitions
+they carry; opening a circuit adds its definitions to the library. Keep a
+downloaded circuit containing your components as a portable backup.
+
+## Displays
+
+**7-segment** accepts eight separate signals: a at the top, then b/c on the
+right, d at the bottom, e/f on the left, g in the middle, and dp for the decimal
+point. High lights a segment, low turns it off, and unknown is shown in amber.
+
+**Hex display** decodes four inputs with weights 1, 2, 4, 8 from top to bottom,
+displaying 0–F. Connect all four pins; unknown inputs produce amber segments.
+**LED** provides a single signal lamp. The Displays example contains all three
+outputs. Truth tables include one column per display input.
+
+![Display components](docs/displays.png)
+
+## Computer and Karnaugh tools
+
+Open **Computer** for the Literal 8 instruction workspace. Choose **BIOS + pixel
+game**, **Assemble & reset**, then **Run**. Capture the keyboard and use arrow
+keys to collect green pixels. The score lives at RAM `2000`. Pause, step, set
+breakpoints, inspect registers and memory, or edit the program and export its
+ROM. See [the machine and instruction reference](docs/computer.md).
+
+![Computer workspace](docs/computer.png)
+
+The instruction runner operates independently of the gate canvas. It implements
+Literal's custom ISA; it does not run existing PC BIOS binaries or turn a drawn
+circuit into a processor. Gate-canvas byte devices use individual bit wires. The
+screen and keyboard are framebuffer/parallel-byte interfaces rather than VGA
+timings or serial PS/2.
+
+Open **Karnaugh** to edit a 1–4 variable map or load an output from the current
+combinational circuit. Cells cycle through 0, 1, and don't-care X. Gray
+ordering, wrapping groups, and a minimal sum-of-products expression update as
+you edit.
+
+![Karnaugh tool](docs/karnaugh.png)
+
+The **Keyboard pixels** example demonstrates physical-key mapping and pixel
+writes. The **Byte counter** example connects a clocked eight-bit counter to
+hexadecimal displays.
+
 ## Reusable simulation core
 
 `packages/core` has no DOM dependencies. It can be imported by a Deno program or
@@ -98,10 +168,13 @@ Use `parseCircuit` to validate external documents. See
 - `scripts/browser_check.ts`: interaction checks using Orca's embedded browser.
 
 To repeat the browser checks, start `deno task dev --port 5176`, open an Orca
-browser tab for this worktree, and run `deno task browser-check`. This replaces
-the preview's current circuit while testing and finishes on the half adder
-example. The checks dispatch DOM pointer and keyboard events through Orca's
-browser evaluation API; they do not certify native mouse or touch input.
+browser tab for this worktree, and run `deno task browser-check`. Run
+`deno task features-check` to check displays and custom-component creation and
+reuse. Run `deno task computer-check` for keyboard mapping, screen writes, BIOS
+execution, gameplay, breakpoints, and Karnaugh interactions. This replaces the
+preview's current circuit while testing and finishes on the half adder example.
+The checks dispatch DOM pointer and keyboard events through Orca's browser
+evaluation API; they do not certify native mouse or touch input.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md). Original code is MIT licensed. Logisim
 is an inspiration; no Logisim source is included.

@@ -209,3 +209,176 @@ test("all shipped examples validate and full adder has correct sum and carry", a
     assert.deepEqual(row.outputs, [count % 2, count > 1 ? 1 : 0]);
   }
 });
+
+test("display sinks expose all segments and decode all hexadecimal digits", async () => {
+  const { displaySegments, hexValue, inputCount, hasOutput } = await import(
+    "../packages/core/src/index.ts"
+  );
+  const expected = [
+    "abcdef",
+    "bc",
+    "abdeg",
+    "abcdg",
+    "bcfg",
+    "acdfg",
+    "acdefg",
+    "abc",
+    "abcdefg",
+    "abcdfg",
+    "abcefg",
+    "cdefg",
+    "adef",
+    "bcdeg",
+    "adefg",
+    "aefg",
+  ];
+  for (let value = 0; value < 16; value++) {
+    const bits = Array.from({ length: 4 }, (_, i) => (value >> i & 1) as 0 | 1);
+    assert.equal(hexValue(bits), value);
+    assert.equal(
+      displaySegments("HEX_DISPLAY", bits).slice(0, 7).map((v, i) =>
+        v ? "abcdefg"[i] : ""
+      ).join(""),
+      expected[value],
+    );
+  }
+  assert.deepEqual(displaySegments("SEVEN_SEG", [1, 0]), [
+    1,
+    0,
+    "X",
+    "X",
+    "X",
+    "X",
+    "X",
+    "X",
+  ]);
+  assert.equal(hexValue([1, "X", 0, 0]), null);
+  assert.deepEqual(displaySegments("HEX_DISPLAY", [1, "X", 0, 0]), [
+    "X",
+    "X",
+    "X",
+    "X",
+    "X",
+    "X",
+    "X",
+    0,
+  ]);
+  assert.equal(inputCount("SEVEN_SEG"), 8);
+  assert.equal(hasOutput("LED"), false);
+  assert.equal(hasOutput("HEX_DISPLAY"), false);
+  const c = circuit([
+    node("a", "INPUT"),
+    node("led", "LED"),
+    node("display", "SEVEN_SEG"),
+  ], [wire("w1", "a", "led"), wire("w2", "a", "display", 7)]);
+  const table = truthTable(c);
+  assert.equal(table.outputs.length, 9);
+  assert.deepEqual(table.rows[1].outputs, [
+    1,
+    "X",
+    "X",
+    "X",
+    "X",
+    "X",
+    "X",
+    "X",
+    1,
+  ]);
+});
+test("custom half adder supports two outputs, nesting, and portable definitions", async () => {
+  const { createDefinition } = await import("../packages/core/src/index.ts");
+  const { examples } = await import("../apps/web/src/examples.ts");
+  const half = examples[0].circuit;
+  const def = createDefinition(
+    half,
+    new Set(half.components.map((c) => c.id)),
+    { id: "adder", name: "Half adder", color: "#527d3c", shape: "rounded" },
+  );
+  const c: Circuit = {
+    ...circuit([
+      node("a", "INPUT", 1),
+      node("b", "INPUT", 1),
+      { ...node("custom", "CUSTOM"), definition: "adder" },
+      node("sum", "OUTPUT"),
+      node("carry", "OUTPUT"),
+    ], [
+      wire("w1", "a", "custom"),
+      wire("w2", "b", "custom", 1),
+      wire("w3", "custom", "sum"),
+      { ...wire("w4", "custom", "carry"), fromPort: 1 },
+    ]),
+    definitions: [def],
+  };
+  assert.deepEqual(parseCircuit(JSON.stringify(c)), c);
+  assert.equal(simulate(c).values.sum, 0);
+  assert.equal(simulate(c).values.carry, 1);
+  assert.deepEqual(truthTable(c).rows.map((r) => r.outputs), [[0, 0], [1, 0], [
+    1,
+    0,
+  ], [0, 1]]);
+  const nested = createDefinition(c, new Set(c.components.map((c) => c.id)), {
+    id: "nested",
+    name: "Nested",
+    color: "#334455",
+    shape: "diamond",
+  });
+  const nestedCircuit = {
+    ...c,
+    components: c.components.map((n) =>
+      n.id === "custom" ? { ...n, definition: "nested" } : n
+    ),
+    definitions: [def, nested],
+  };
+  assert.equal(
+    simulate(parseCircuit(JSON.stringify(nestedCircuit))).values.carry,
+    1,
+  );
+  assert.throws(() => connect(c, "custom", "sum", 0, "new", 2), /output pin/);
+  assert.throws(
+    () =>
+      parseCircuit(
+        JSON.stringify({
+          ...c,
+          definitions: [{
+            ...def,
+            components: [
+              { ...node("self", "CUSTOM"), definition: "adder" },
+              node("out", "OUTPUT"),
+            ],
+            wires: [],
+          }],
+        }),
+      ),
+    /Recursive/,
+  );
+});
+test("gate selections infer shared boundary inputs and preserve unknown signals", async () => {
+  const { createDefinition } = await import("../packages/core/src/index.ts");
+  const { examples } = await import("../apps/web/src/examples.ts");
+  const def = createDefinition(examples[0].circuit, new Set(["xor", "and"]), {
+    id: "pair",
+    name: "Pair",
+    color: "#527d3c",
+    shape: "rectangle",
+  });
+  assert.equal(def.components.filter((c) => c.kind === "INPUT").length, 2);
+  assert.equal(def.components.filter((c) => c.kind === "OUTPUT").length, 2);
+  const c: Circuit = {
+    ...circuit([
+      { ...node("p", "CUSTOM"), definition: "pair" },
+      node("o", "OUTPUT"),
+    ], [wire("w", "p", "o")]),
+    definitions: [def],
+  };
+  assert.equal(simulate(c).values.o, "X");
+  assert.throws(
+    () =>
+      createDefinition(circuit([node("d", "DFF")]), new Set(["d"]), {
+        id: "d",
+        name: "D",
+        color: "#527d3c",
+        shape: "rounded",
+      }),
+    /combinational/,
+  );
+});
