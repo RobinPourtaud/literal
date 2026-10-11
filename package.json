@@ -1,0 +1,12 @@
+{
+  "name": "literal", "private": true, "version": "0.1.0", "type": "module",
+  "workspaces": ["apps/web", "packages/core"],
+  "scripts": {
+    "dev": "vite --config apps/web/vite.config.ts",
+    "build": "tsc --noEmit && npm run build -w @literal/core && vite build --config apps/web/vite.config.ts",
+    "test": "npm run build -w @literal/core && node --test tests/*.test.mjs",
+    "preview": "vite preview --config apps/web/vite.config.ts"
+  },
+  "devDependencies": {"typescript": "^5.9.3", "vite": "^7.3.7", "@types/node": "^22.0.0"},
+  "engines": {"node": ">=22.12"}
+}

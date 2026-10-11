@@ -1,0 +1,1 @@
+{"name":"@literal/web","private":true,"version":"0.1.0","type":"module","dependencies":{"@literal/core":"*","lucide":"^0.468.0"}}
