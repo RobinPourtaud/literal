@@ -1,3 +1,4 @@
+import { transistorCircuit } from "@literal/core";
 import assert from "node:assert/strict";
 const worktree = new URL("..", import.meta.url).pathname.replace(/\/$/, "");
 async function orca(...args: string[]) {
@@ -49,7 +50,7 @@ const circuit = {
 };
 try {
   await run(
-    `(()=>{localStorage.setItem('literal.mode','playground');localStorage.setItem('literal.lessonStep','0');return 'ok'})()`,
+    `(()=>{for(const key of Object.keys(localStorage))if(key.startsWith('literal.'))localStorage.removeItem(key);localStorage.setItem('literal.mode','playground');localStorage.setItem('literal.lessonStep','0');localStorage.setItem('literal.lessonStep.not','0');localStorage.setItem('literal.course','not');localStorage.setItem('literal.discovered','[]');return 'ok'})()`,
   );
   await orca("reload");
   await orca("wait", "--selector", "#board");
@@ -125,7 +126,7 @@ try {
   const def = await run(
     `(await window.literal.getState()).circuit.definitions.find(d=>d.name==='NOT')`,
   );
-  assert.match(def.description, /Inverts/);
+  assert.match(def.description, /0 becomes 1/);
   assert.equal(
     def.components.filter((c: { kind: string }) => c.kind === "INPUT").length,
     1,
@@ -136,7 +137,7 @@ try {
   );
   assert.match(
     await run(`document.querySelector('#discover-guide').textContent`),
-    /Your gate is in the library/,
+    /Course complete/,
   );
   await run(
     `(()=>{document.querySelector('[data-edit-custom="${def.id}"]').click();document.querySelector('#appearance-description').value='My first CMOS NOT gate';document.querySelector('#appearance-form').requestSubmit();return 'ok'})()`,
@@ -152,6 +153,186 @@ try {
       `(await window.literal.getState()).circuit.definitions.find(d=>d.name==='NOT').description`,
     ),
     "My first CMOS NOT gate",
+  );
+  await run(
+    `(()=>{document.querySelector('[data-lesson=next-course]').click();return 'ok'})()`,
+  );
+  assert.match(
+    await run(`document.querySelector('.lesson-progress').textContent`),
+    /NAND/,
+  );
+  assert.equal(
+    (await run(`window.literal.getState()`)).circuit.components.length,
+    0,
+  );
+  await run(
+    `(()=>{document.querySelector('[data-place=NMOS]').click();document.querySelector('#place-center').click();return 'ok'})()`,
+  );
+  assert.equal(
+    await run(
+      `JSON.stringify(document.querySelector('#select-tool').classList.contains('active') && document.querySelector('#place-center').hidden && !document.querySelector('#board').classList.contains('placing'))`,
+    ),
+    true,
+  );
+  await run(
+    `(()=>{document.querySelector('#place-center').click();return 'ok'})()`,
+  );
+  assert.equal(
+    (await run(`window.literal.getState()`)).circuit.components.length,
+    1,
+  );
+  await orca("reload");
+  await orca("wait", "--selector", "#discover-guide");
+  assert.match(
+    await run(`document.querySelector('.lesson-progress').textContent`),
+    /NAND/,
+  );
+  assert.equal(
+    (await run(`window.literal.getState()`)).circuit.components.length,
+    1,
+  );
+  await run(
+    `(()=>{document.querySelector('[data-lesson=courses]').click();document.querySelector('[data-course="0"]').click();return 'ok'})()`,
+  );
+  assert.equal(
+    (await run(`window.literal.getState()`)).circuit.components.length,
+    6,
+  );
+  assert.match(
+    await run(`document.querySelector('.lesson-progress').textContent`),
+    /6 \/ 6/,
+  );
+  await run(
+    `(()=>{document.querySelector('[data-lesson=next-course]').click();return 'ok'})()`,
+  );
+  const base = transistorCircuit("NAND")!;
+  const nandCircuit = {
+    ...base,
+    components: base.components.filter((c) => c.kind !== "OUTPUT").map((c) =>
+      c.kind === "INPUT" ? { ...c, kind: "POWER", value: 0 } : c
+    ),
+    wires: base.wires.filter((w) =>
+      base.components.find((c) => c.id === w.to)?.kind !== "OUTPUT"
+    ),
+  };
+  await run(`window.literal.setCircuit(${JSON.stringify(nandCircuit)})`);
+  for (let i = 0; i < 4; i++) {
+    await run(
+      `(()=>{document.querySelector('[data-lesson=next]').click();return 'ok'})()`,
+    );
+  }
+  const controls = base.components.filter((c) => c.kind === "INPUT");
+  for (const values of [[0, 1], [1, 0], [1, 1]]) {
+    await run(
+      `window.literal.setInputs(${
+        JSON.stringify(controls.map((c, i) => ({ id: c.id, value: values[i] })))
+      })`,
+    );
+  }
+  await orca("reload");
+  await orca("wait", "--selector", "#discover-guide");
+  assert.equal(
+    await run(
+      `JSON.stringify(document.querySelector('[data-lesson=next]').disabled)`,
+    ),
+    false,
+  );
+  await run(
+    `(()=>{document.querySelector('[data-lesson=next]').click();document.querySelector('[data-lesson=save]').click();document.querySelector('#custom-form').requestSubmit();document.querySelector('[data-lesson=next-course]').click();return 'ok'})()`,
+  );
+  assert.match(
+    await run(`document.querySelector('.lesson-progress').textContent`),
+    /AND/,
+  );
+  for (const kind of ["and", "or"]) {
+    const defs = (await run(`window.literal.getState()`)).library;
+    const not = defs.find((d: { name: string }) => d.name === "NOT"),
+      nand = defs.find((d: { name: string }) => d.name === "NAND");
+    const scene = {
+      version: 1,
+      name: kind.toUpperCase(),
+      definitions: defs,
+      components: [
+        { id: "a", kind: "POWER", label: "A", x: 100, y: 100, value: 0 },
+        { id: "b", kind: "POWER", label: "B", x: 100, y: 300, value: 0 },
+        {
+          id: "nand",
+          kind: "CUSTOM",
+          definition: nand.id,
+          label: "NAND",
+          x: 400,
+          y: 200,
+        },
+        {
+          id: "not-a",
+          kind: "CUSTOM",
+          definition: not.id,
+          label: "NOT",
+          x: 650,
+          y: 200,
+        },
+        ...(kind === "or"
+          ? [{
+            id: "not-b",
+            kind: "CUSTOM",
+            definition: not.id,
+            label: "NOT",
+            x: 250,
+            y: 300,
+          }]
+          : []),
+      ],
+      wires: kind === "and"
+        ? [
+          { id: "a-nand", from: "a", to: "nand", port: 0 },
+          { id: "b-nand", from: "b", to: "nand", port: 1 },
+          { id: "out", from: "nand", to: "not-a", port: 0 },
+        ]
+        : [
+          { id: "a-not", from: "a", to: "not-a", port: 0 },
+          { id: "b-not", from: "b", to: "not-b", port: 0 },
+          { id: "a-nand", from: "not-a", to: "nand", port: 0 },
+          { id: "b-nand", from: "not-b", to: "nand", port: 1 },
+        ],
+    };
+    await run(`window.literal.setCircuit(${JSON.stringify(scene)})`);
+    await run(
+      `(()=>{document.querySelector('[data-lesson=next]').click();document.querySelector('[data-lesson=next]').click();return 'ok'})()`,
+    );
+    for (const values of [[0, 1], [1, 0], [1, 1]]) {
+      await run(
+        `window.literal.setInputs([{id:'a',value:${values[0]}},{id:'b',value:${
+          values[1]
+        }}])`,
+      );
+    }
+    await run(
+      `(()=>{document.querySelector('[data-lesson=next]').click();document.querySelector('[data-lesson=save]').click();document.querySelector('#custom-form').requestSubmit();return 'ok'})()`,
+    );
+    if (kind === "and") {
+      await run(
+        `(()=>{document.querySelector('[data-lesson=next-course]').click();return 'ok'})()`,
+      );
+    }
+  }
+  await run(
+    `(()=>{document.querySelector('[data-lesson=free]').click();return 'ok'})()`,
+  );
+  assert.match(
+    await run(`document.querySelector('.lesson-progress').textContent`),
+    /FREE BUILD/,
+  );
+  const state = await run(`window.literal.getState()`);
+  assert.ok(
+    ["NOT", "NAND", "AND", "OR"].every((name) =>
+      state.library.some((d: { name: string }) => d.name === name)
+    ),
+  );
+  console.log(
+    "PASS next courses NOT → NAND → AND → OR → free build, workspace restoration, and single placement",
+  );
+  await run(
+    `(()=>{document.querySelector('[data-lesson=courses]').click();document.querySelector('[data-course="0"]').click();return 'ok'})()`,
   );
   const shot = await orca("screenshot");
   await Deno.writeFile(

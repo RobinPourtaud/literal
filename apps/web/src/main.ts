@@ -1,5 +1,5 @@
 import { componentHelp, descriptions } from "./component-info.ts";
-import { firstGate, lessonChecks, lessons } from "./discover.ts";
+import { courses, courseState } from "./discover.ts";
 import {
   assemble,
   type Circuit,
@@ -121,14 +121,42 @@ try {
     );
   }
 } catch {}
+let courseIndex = Math.max(
+  0,
+  courses.findIndex((c) => c.id === localStorage.getItem("literal.course")),
+);
+let freeBuild = localStorage.getItem("literal.course") === "free";
 let lessonStep = Math.max(
   0,
   Math.min(
-    lessons.length - 1,
-    Number(localStorage.getItem("literal.lessonStep")) || 0,
+    courses[courseIndex].steps.length - 1,
+    Math.floor(
+      Number(
+        localStorage.getItem(`literal.lessonStep.${courses[courseIndex].id}`) ??
+          localStorage.getItem("literal.lessonStep"),
+      ) || 0,
+    ),
   ),
 );
 const testedGateInputs = new Set<string>();
+function restoreCourseTests() {
+  testedGateInputs.clear();
+  if (freeBuild) return;
+  try {
+    const saved = JSON.parse(
+      localStorage.getItem(`literal.courseTests.${courses[courseIndex].id}`) ??
+        "[]",
+    );
+    if (Array.isArray(saved)) {
+      saved.slice(-128).forEach((value) => {
+        if (typeof value === "string" && value.length < 20000) {
+          testedGateInputs.add(value);
+        }
+      });
+    }
+  } catch {}
+}
+restoreCourseTests();
 let pins = new Set<string>();
 let memory: Memory = { q: {}, clock: {} };
 let keyboards: Record<string, KeyboardState> = {};
@@ -367,6 +395,14 @@ function persist() {
       mode === "discover" ? "literal.discover.circuit" : "literal.circuit",
       JSON.stringify(circuit),
     );
+    if (mode === "discover") {
+      localStorage.setItem(
+        `literal.discover.course.${
+          freeBuild ? "free" : courses[courseIndex].id
+        }`,
+        JSON.stringify(circuit),
+      );
+    }
   } catch {
     notify("Autosave unavailable · download to keep your circuit");
   }
@@ -1246,7 +1282,7 @@ $("#app").addEventListener("click", (e) => {
   }
   if (b.dataset.lesson) {
     if (b.dataset.lesson === "hint") {
-      const lesson = lessons[lessonStep];
+      const lesson = courses[courseIndex].steps[lessonStep];
       dialog(
         `Hint · Step ${lessonStep + 1}`,
         `<div class="lesson-hint-panel"><h3>${esc(lesson.title)}</h3><p>${
@@ -1255,24 +1291,46 @@ $("#app").addEventListener("click", (e) => {
       );
       return;
     }
+    if (b.dataset.lesson === "courses") {
+      chooseCourse();
+      return;
+    }
+    if (b.dataset.lesson === "next-course") {
+      selectCourse(courseIndex + 1);
+      return;
+    }
+    if (b.dataset.lesson === "free") {
+      selectCourse(-1);
+      return;
+    }
     if (b.dataset.lesson === "next") {
-      lessonStep = Math.min(lessons.length - 1, lessonStep + 1);
+      lessonStep = Math.min(
+        courses[courseIndex].steps.length - 1,
+        lessonStep + 1,
+      );
     }
     if (b.dataset.lesson === "previous") {
       lessonStep = Math.max(0, lessonStep - 1);
     }
     if (b.dataset.lesson === "save") {
-      const gate = firstGate(circuit);
+      const course = courses[courseIndex];
+      const gate =
+        courseState(course, circuit, sim, testedGateInputs, library, discovered)
+          .gate;
       if (gate) {
         selected = new Set(gate.members.map((c) => c.id));
         render();
         customDialog();
-        $<HTMLInputElement>("#custom-name").value = "NOT";
+        $<HTMLInputElement>("#custom-name").value = course.id.toUpperCase();
         $<HTMLTextAreaElement>("#custom-description").value =
-          "Inverts its input: 0 becomes 1, and 1 becomes 0. Built from CMOS transistors.";
+          descriptions[course.id.toUpperCase() as Kind];
       }
     }
     localStorage.setItem("literal.lessonStep", String(lessonStep));
+    localStorage.setItem(
+      `literal.lessonStep.${courses[courseIndex].id}`,
+      String(lessonStep),
+    );
     renderDiscover();
     return;
   }
@@ -1598,6 +1656,11 @@ function place(p: Point) {
     };
     circuit.components.push(c);
     selected = new Set([c.id]);
+    placement = null;
+    placementDefinition = null;
+    wiring = null;
+    panMode = false;
+    tab = "inspect";
   });
 }
 board.addEventListener("pointerdown", (e) => {
@@ -2318,54 +2381,159 @@ $("#dialog-body").addEventListener("click", (event) => {
     c = page?.circuit.components.find((c) => c.id === target.dataset.node);
   if (page && c) navigateInside(c, page.circuit, page.simulation);
 });
+function selectCourse(index: number) {
+  persist();
+  if (!freeBuild) {
+    localStorage.setItem(
+      `literal.lessonStep.${courses[courseIndex].id}`,
+      String(lessonStep),
+    );
+  }
+  freeBuild = index < 0;
+  if (!freeBuild) courseIndex = Math.min(index, courses.length - 1);
+  localStorage.setItem(
+    "literal.course",
+    freeBuild ? "free" : courses[courseIndex].id,
+  );
+  lessonStep = freeBuild ? 0 : Math.max(
+    0,
+    Math.min(
+      courses[courseIndex].steps.length - 1,
+      Number(
+        localStorage.getItem(`literal.lessonStep.${courses[courseIndex].id}`),
+      ) || 0,
+    ),
+  );
+  localStorage.setItem("literal.lessonStep", String(lessonStep));
+  const saved = localStorage.getItem(
+    `literal.discover.course.${freeBuild ? "free" : courses[courseIndex].id}`,
+  );
+  let next = blank();
+  next.name = freeBuild ? "Discover workspace" : courses[courseIndex].name;
+  if (saved) {
+    try {
+      next = parseCircuit(saved);
+    } catch {}
+  }
+  restoreCourseTests();
+  load(next);
+  $<HTMLDialogElement>("#dialog").close();
+}
+function chooseCourse() {
+  dialog(
+    "Discover courses",
+    `<div class="example-dialog">${
+      courses.map((course, index) => {
+        const unlocked = index === 0 ||
+          courseState(
+            courses[index - 1],
+            circuit,
+            sim,
+            new Set(),
+            library,
+            discovered,
+          ).saved;
+        return `<button data-course="${index}" ${
+          unlocked ? "" : "disabled"
+        }><strong>${index + 1}. ${esc(course.name)}</strong><span>${
+          unlocked
+            ? "Open saved lesson workspace"
+            : "Save the previous gate to unlock"
+        }</span></button>`;
+      }).join("")
+    }<button data-course="free"><strong>Continue building</strong><span>Use your discovered components on a free canvas</span></button></div>`,
+  );
+}
+$("#dialog-body").addEventListener("click", (event) => {
+  const button = (event.target as Element).closest<HTMLButtonElement>(
+    "[data-course]",
+  );
+  if (button && !button.disabled) {
+    selectCourse(
+      button.dataset.course === "free" ? -1 : Number(button.dataset.course),
+    );
+  }
+});
 function renderDiscover() {
   const target = $("#discover-guide");
   target.hidden = mode !== "discover";
   if (mode !== "discover") return;
-  const checks = lessonChecks(
-    circuit,
-    sim,
-    testedGateInputs,
-    library,
-    discovered,
-  );
-  const lesson = lessons[lessonStep];
-  const gate = firstGate(circuit);
+  if (freeBuild) {
+    target.innerHTML =
+      '<div class="lesson-heading"><span class="lesson-progress">DISCOVER · FREE BUILD</span><button data-lesson="courses">Courses</button></div>';
+    return;
+  }
+  const previousTests = testedGateInputs.size;
+  const course = courses[courseIndex],
+    { checks, gate, saved } = courseState(
+      course,
+      circuit,
+      sim,
+      testedGateInputs,
+      library,
+      discovered,
+    );
+  if (testedGateInputs.size !== previousTests) {
+    try {
+      localStorage.setItem(
+        `literal.courseTests.${course.id}`,
+        JSON.stringify([...testedGateInputs].slice(-128)),
+      );
+    } catch {}
+  }
+  const lesson = course.steps[lessonStep],
+    last = lessonStep === course.steps.length - 1;
   const live = gate
-    ? `<div class="lesson-signals">A <strong>${
-      sim.values[gate.input.id]
-    }</strong> → Output <strong>${sim.values[gate.output.id]}</strong></div>`
+    ? `<div class="lesson-signals">${
+      gate.inputs.map((c, i) =>
+        `${esc(c.label || String.fromCharCode(65 + i))} <strong>${
+          sim.values[c.id]
+        }</strong>`
+      ).join(" · ")
+    } → Output <strong>${sim.values[gate.output.id]}</strong></div>`
     : "";
   target.innerHTML =
-    `<div class="lesson-heading"><div class="lesson-progress">FIRST GATE · ${
+    `<div class="lesson-heading"><div class="lesson-progress">${
+      courseIndex === 0 ? "FIRST GATE" : esc(course.name.toUpperCase())
+    } · ${
       lessonStep + 1
-    } / ${lessons.length}</div><button data-lesson="hint" class="lesson-hint-button" aria-label="Show hint for step ${
+    } / ${course.steps.length}</div><div class="lesson-course-tools"><button data-lesson="courses">Courses</button><button data-lesson="hint" class="lesson-hint-button" aria-label="Show hint for step ${
       lessonStep + 1
-    }">Hint</button></div><h2>${
+    }">Hint</button></div></div><h2>${
       esc(lesson.title)
     }</h2><div class="lesson-content"><p>${
       esc(lesson.text)
     }</p>${live}<p class="lesson-check" role="status">${
-      checks[lessonStep]
+      saved
+        ? `✓ ${course.id.toUpperCase()} saved · Course complete`
+        : last
+        ? "Save the gate to finish this course"
+        : checks[lessonStep]
         ? "✓ Step complete"
-        : lessonStep === 4
-        ? "Test A at both 0 and 1"
+        : lessonStep === course.steps.length - 2
+        ? "Test every input combination"
         : "Build this step on the canvas"
     }</p></div><div class="lesson-actions"><button data-lesson="previous" ${
       lessonStep === 0 ? "disabled" : ""
     }>Back</button>${
-      lessonStep === 5
-        ? `<button data-lesson="save" ${
-          !firstGate(circuit) ? "disabled" : ""
-        }>Save gate</button>`
-        : `<button class="primary" data-lesson="next" ${
+      last
+        ? `<button data-lesson="save" ${!gate ? "disabled" : ""}>${
+          saved ? "Save again" : "Save gate"
+        }</button>`
+        : `<button data-lesson="next" ${
           checks[lessonStep] ? "" : "disabled"
         }>Next</button>`
-    }</div>${
-      lessonStep === 5 && checks[5]
-        ? "<p>Your gate is in the library. Try building NAND next.</p>"
+    }${
+      saved
+        ? `<button class="primary" data-lesson="${
+          courseIndex < courses.length - 1 ? "next-course" : "free"
+        }">${
+          courseIndex < courses.length - 1
+            ? "Next course →"
+            : "Continue building"
+        }</button>`
         : ""
-    }`;
+    }</div>`;
 }
 function chooseMode() {
   dialog(

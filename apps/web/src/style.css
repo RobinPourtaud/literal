@@ -1585,3 +1585,13 @@ dialog:has(.component-help) .dialog-heading {
   z-index: 1;
   padding: 6px 0;
 }
+
+.lesson-course-tools {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.lesson-course-tools button {
+  font-size: 12px;
+  padding: 5px 9px;
+}

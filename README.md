@@ -203,6 +203,9 @@ components can store an editable description with their circuit definition.
 
 ![Discover first-gate lesson](docs/discover.png)
 
+Placing a component returns to **Select** mode. Choose a component again when
+you want another copy.
+
 ## Development
 
 - `packages/core/`: gate evaluation, state, document validation, and truth
