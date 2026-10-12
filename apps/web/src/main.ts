@@ -1,7 +1,9 @@
+import { insideBounds, inspectCircuit } from "./inside.ts";
 import { componentHelp, descriptions } from "./component-info.ts";
 import { courses, courseState } from "./discover.ts";
 import {
   checkLab,
+  labGateMembers,
   type LabReport,
   labStarter,
   solutions,
@@ -32,6 +34,7 @@ import {
   screenColors,
   screenWidth,
   simulate,
+  type Simulation,
   transistorCircuit,
   truthTable,
   virtualKeys,
@@ -1251,6 +1254,7 @@ function download(name: string, data: string, type = "application/json") {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 function dialog(title: string, content: string) {
+  $("#dialog").classList.remove("inside-dialog");
   $("#dialog-title").textContent = title;
   $("#dialog-body").innerHTML = content;
   $<HTMLDialogElement>("#dialog").showModal();
@@ -1331,6 +1335,23 @@ $("#app").addEventListener("click", (e) => {
         render();
         view();
       }
+      return;
+    }
+    if (b.dataset.lesson === "save-lab") {
+      const course = courses[courseIndex],
+        report = checkLab(course.id, circuit);
+      if (!report.passed) {
+        labReport = report;
+        labReportCircuit = JSON.stringify(circuit);
+        renderDiscover();
+        return;
+      }
+      selected = labGateMembers(course.id, circuit);
+      render();
+      customDialog();
+      $<HTMLInputElement>("#custom-name").value = course.name.split(" · ").at(
+        -1,
+      )!;
       return;
     }
     if (b.dataset.lesson === "check") {
@@ -1707,11 +1728,38 @@ function customDialog() {
     );
     return;
   }
+  let preview = "", previewError = "";
+  try {
+    const def = createDefinition(circuit, selected, {
+      id: "pin-preview",
+      name: "Preview",
+      color: "#527d3c",
+      shape: "rounded",
+    });
+    const inputs = def.components.filter((n) => n.kind === "INPUT"),
+      outputs = def.components.filter((n) => n.kind === "OUTPUT");
+    preview =
+      `<div id="custom-preview"><strong>${selected.size} selected components</strong><p>Inputs (${inputs.length}): ${
+        inputs.map((n) => esc(n.label)).join(", ") || "none"
+      }</p><p>Outputs (${outputs.length}): ${
+        outputs.map((n) => esc(n.label)).join(", ")
+      }</p>${
+        !inputs.length
+          ? '<p class="pin-warning">No input pins. Selected Power blocks remain fixed inside the component. Keep A and B outside your selection to make them inputs.</p>'
+          : ""
+      }</div>`;
+  } catch (error) {
+    previewError = (error as Error).message;
+  }
   dialog(
     "Create component",
-    `<form id="custom-form"><p class="muted">Save the selected circuit to your library. Input and Output labels become pin names. Unconnected pins and connections crossing the selection become pins automatically.</p><label class="field">Component name<input id="custom-name" maxlength="80" required value="${
+    `<form id="custom-form">${preview}<p class="muted">Save the selected circuit to your library. Input and Output labels become pin names. Unconnected pins and connections crossing the selection become pins automatically.</p><label class="field">Component name<input id="custom-name" maxlength="80" required value="${
       esc(circuit.name.slice(0, 80))
-    }"></label><label class="field">Description<textarea id="custom-description" maxlength="600" rows="3" placeholder="What this component does and how to use its pins"></textarea></label><label class="field">Color<input id="custom-color" type="color" value="#527d3c"></label><label class="field">Shape<select id="custom-shape"><option value="rounded">Rounded rectangle</option><option value="rectangle">Rectangle</option><option value="diamond">Diamond</option></select></label><p class="muted">Save gate and transistor networks. Keep behavioral memory and interactive devices outside the selection.</p><p id="custom-error" role="alert"></p><button class="primary" type="submit">Save component</button></form>`,
+    }"></label><label class="field">Description<textarea id="custom-description" maxlength="600" rows="3" placeholder="What this component does and how to use its pins"></textarea></label><label class="field">Color<input id="custom-color" type="color" value="#527d3c"></label><label class="field">Shape<select id="custom-shape"><option value="rounded">Rounded rectangle</option><option value="rectangle">Rectangle</option><option value="diamond">Diamond</option></select></label><p class="muted">Save gate and transistor networks. Keep behavioral memory and interactive devices outside the selection.</p><p id="custom-error" role="alert">${
+      esc(previewError)
+    }</p><button class="primary" type="submit" ${
+      previewError ? "disabled" : ""
+    }>Save component</button></form>`,
   );
 }
 $("#dialog-body").addEventListener("submit", (e) => {
@@ -2366,109 +2414,191 @@ $(".inspector").addEventListener("click", (event) => {
 });
 
 type InsidePage = {
-  circuit: Circuit;
+  circuit?: Circuit;
   simulation: ReturnType<typeof simulate>;
   label: string;
+  component?: Component;
+  view?: { x: number; y: number; zoom: number };
 };
 let insidePages: InsidePage[] = [];
-function insideOf(
-  c: Component,
-  parent: Circuit,
-  simulation: ReturnType<typeof simulate>,
-): Circuit | null {
-  const definition = definitionOf(c, parent);
-  if (definition) {
-    return {
-      version: 1,
-      name: definition.name,
-      components: clone(definition.components),
-      wires: clone(definition.wires),
-      definitions: parent.definitions,
-    };
-  }
-  return transistorCircuit(c.kind);
-}
 function openInside(c: Component) {
   stop();
+  $("#dialog").classList.add("inside-dialog");
   insidePages = [];
   navigateInside(c, circuit, sim);
   $<HTMLDialogElement>("#dialog").showModal();
+  fitInside();
 }
 function navigateInside(
   c: Component,
   parent: Circuit,
   simulation: ReturnType<typeof simulate>,
 ) {
-  const next = insideOf(c, parent, simulation);
+  const inspected = inspectCircuit(c, parent, simulation);
+  const next = inspected?.circuit;
   $("#dialog-title").textContent = `Inside ${c.label}`;
   if (!next) {
-    const mos = ["NMOS", "PMOS"].includes(c.kind);
-    const ports = simulation.inputs[c.id] ?? [];
-    const structural = mos
-      ? `<svg class="transistor-section" viewBox="0 0 440 220" role="img" aria-label="${c.kind} source, insulated gate, drain and substrate"><rect x="20" y="100" width="400" height="90" rx="8" fill="#e9eee1" stroke="#809473"/><rect x="45" y="100" width="85" height="55" fill="#c5d6b8"/><rect x="310" y="100" width="85" height="55" fill="#c5d6b8"/><rect x="145" y="80" width="150" height="12" fill="#d7d2bf"/><rect x="145" y="48" width="150" height="30" rx="4" fill="#809473"/><path d="M88 100V35 M352 100V35 M220 48V20" fill="none" stroke="#527d3c" stroke-width="3"/><text x="35" y="25">Source: ${
-        ports[1] ?? "X"
-      }</text><text x="170" y="15">Gate: ${
-        ports[0] ?? "X"
-      }</text><text x="310" y="25">Drain: ${
-        simulation.values[c.id] ?? "X"
-      }</text><text x="155" y="180">${
-        c.kind === "NMOS" ? "p substrate · n+ contacts" : "n well · p+ contacts"
-      }</text><text x="155" y="215">Insulated gate / oxide</text></svg>`
-      : "";
-    $("#dialog-body").innerHTML = `${
-      insidePages.length ? '<button id="inside-back">← Back</button>' : ""
-    }<h3>${esc(c.kind)}</h3>${structural}<p>${
-      esc(descriptions[c.kind])
-    }</p><p class="muted">${
-      ["NMOS", "PMOS"].includes(c.kind)
-        ? "Gate controls the conductive channel between source and drain. This is a logic switch model: Z means high impedance. It does not model analog voltage, current, capacitance, or transistor physics."
-        : ["POWER", "GROUND", "INPUT", "OUTPUT", "JUNCTION"].includes(c.kind)
-        ? "Electrical primitive. There is no lower component definition."
-        : "This component is currently a behavioral device model. A gate or transistor implementation is not available yet."
-    }</p>`;
+    insidePages.push({ label: c.label, simulation, component: c });
+    paintInside();
     return;
   }
-  const inputs = next.components.filter((n) => n.kind === "INPUT");
-  inputs.forEach((n, i) => {
-    const bit = simulation.inputs[c.id]?.[i];
-    n.value = bit === 1 ? 1 : 0;
-  });
-  const overrides = Object.fromEntries(
-    inputs.map((n, i) => [n.id, simulation.inputs[c.id]?.[i] ?? n.value ?? 0]),
-  );
-  insidePages.push({
-    circuit: next,
-    simulation: simulate(next, simulation.memory.nested?.[c.id], overrides),
-    label: c.label,
-  });
+  insidePages.push({ ...inspected!, label: c.label });
   paintInside();
+}
+function paintInsideLeaf(c: Component, simulation: Simulation) {
+  const mos = ["NMOS", "PMOS"].includes(c.kind);
+  const ports = simulation.inputs[c.id] ?? [];
+  const structural = mos
+    ? `<svg class="transistor-section" viewBox="0 0 440 220" role="img" aria-label="${c.kind} source, insulated gate, drain and substrate"><rect x="20" y="100" width="400" height="90" rx="8" fill="#e9eee1" stroke="#809473"/><rect x="45" y="100" width="85" height="55" fill="#c5d6b8"/><rect x="310" y="100" width="85" height="55" fill="#c5d6b8"/><rect x="145" y="80" width="150" height="12" fill="#d7d2bf"/><rect x="145" y="48" width="150" height="30" rx="4" fill="#809473"/><path d="M88 100V35 M352 100V35 M220 48V20" fill="none" stroke="#527d3c" stroke-width="3"/><text x="35" y="25">Source: ${
+      ports[1] ?? "X"
+    }</text><text x="170" y="15">Gate: ${
+      ports[0] ?? "X"
+    }</text><text x="310" y="25">Drain: ${
+      simulation.values[c.id] ?? "X"
+    }</text><text x="155" y="180">${
+      c.kind === "NMOS" ? "p substrate · n+ contacts" : "n well · p+ contacts"
+    }</text><text x="155" y="215">Insulated gate / oxide</text></svg>`
+    : "";
+  $("#dialog-body").innerHTML = `<h3>${esc(c.kind)}</h3>${structural}<p>${
+    esc(descriptions[c.kind])
+  }</p><p class="muted">${
+    ["NMOS", "PMOS"].includes(c.kind)
+      ? "Gate controls the conductive channel between source and drain. This is a logic switch model: Z means high impedance. It does not model analog voltage, current, capacitance, or transistor physics."
+      : ["POWER", "GROUND", "INPUT", "OUTPUT", "JUNCTION"].includes(c.kind)
+      ? "Electrical primitive. There is no lower component definition."
+      : "This component is currently a behavioral device model. A gate or transistor implementation is not available yet."
+  }</p>`;
 }
 function paintInside() {
   const page = insidePages.at(-1);
   if (!page) return;
-  const dims = page.circuit.components.map((c) => ({
-    c,
-    size: dimensions(c, page.circuit),
-  }));
-  const left = Math.min(...dims.map(({ c, size }) => c.x - size.width / 2)) -
-      30,
-    top = Math.min(...dims.map(({ c, size }) => c.y - size.height / 2)) - 30;
-  const width = Math.max(...dims.map(({ c, size }) => c.x + size.width / 2)) -
-      left + 30,
-    height = Math.max(...dims.map(({ c, size }) => c.y + size.height / 2)) -
-      top + 30;
-  $("#dialog-title").textContent = "Component internals";
-  $("#dialog-body").innerHTML = `<div class="inside-breadcrumbs">${
-    insidePages.map((p, i) =>
-      `<button data-inside-level="${i}">${esc(p.label)}</button>`
-    ).join(" → ")
-  }</div><p class="muted">Click a component to go deeper. Gates use CMOS switch networks. Z is high impedance.</p><div class="inside-scroll"><svg id="inside-circuit" viewBox="${left} ${top} ${width} ${height}" style="width:${width}px;height:${height}px">${
-    draw(page.circuit, page.simulation, new Set(), null)
-  }</svg></div><button id="inside-open-circuit">Open this circuit in playground</button>`;
+  if (!page.circuit) {
+    paintInsideLeaf(page.component!, page.simulation);
+    $("#dialog-body").insertAdjacentHTML("afterbegin", insideBreadcrumbs());
+    return;
+  }
+  $("#dialog-title").textContent = `Inside ${page.label}`;
+  $("#dialog-body").innerHTML =
+    `${insideBreadcrumbs()}<p class="muted">Signal snapshot · click a component or press Enter to inspect it. Drag the background to pan; scroll to zoom.</p><div class="inside-tools"><button id="inside-zoom-out" aria-label="Zoom out internals">−</button><span id="inside-zoom"></span><button id="inside-zoom-in" aria-label="Zoom in internals">+</button><button id="inside-fit">Fit all</button><select id="inside-find" aria-label="Find an internal component"><option value="">Find a component…</option>${
+      page.circuit.components.map((c) =>
+        `<option value="${esc(c.id)}">${esc(c.label)} · ${c.kind} · ${
+          esc(c.id)
+        }</option>`
+      ).join("")
+    }</select></div><div class="inside-scroll"><svg id="inside-circuit" role="img" aria-label="Internal circuit of ${
+      esc(page.label)
+    }">${
+      draw(page.circuit, page.simulation, new Set(), null)
+    }</svg></div><button id="inside-open-circuit">Edit a copy in Playground</button>`;
+  if (page.view) viewInside();
+  else if ($<HTMLDialogElement>("#dialog").open) fitInside();
 }
+function insideBreadcrumbs() {
+  return `<div class="inside-breadcrumbs">${
+    insidePages.length > 1 ? '<button id="inside-back">← Back</button>' : ""
+  }${
+    insidePages.map((p, i) =>
+      `<button data-inside-level="${i}" ${
+        i === insidePages.length - 1 ? 'aria-current="page"' : ""
+      }>${esc(p.label)}</button>`
+    ).join(" → ")
+  }</div>`;
+}
+function viewInside() {
+  const page = insidePages.at(-1), svg = $("#inside-circuit");
+  if (!page?.view || !svg) return;
+  const r = $(".inside-scroll").getBoundingClientRect();
+  svg.setAttribute(
+    "viewBox",
+    `${page.view.x} ${page.view.y} ${r.width / page.view.zoom} ${
+      r.height / page.view.zoom
+    }`,
+  );
+  $("#inside-zoom").textContent = `${Math.round(page.view.zoom * 100)}%`;
+}
+function fitInside() {
+  const page = insidePages.at(-1);
+  if (!page?.circuit) return;
+  const r = $(".inside-scroll").getBoundingClientRect(),
+    box = insideBounds(page.circuit);
+  const zoom = Math.min(1, r.width / box.width, r.height / box.height);
+  page.view = {
+    x: box.x - (r.width / zoom - box.width) / 2,
+    y: box.y - (r.height / zoom - box.height) / 2,
+    zoom,
+  };
+  viewInside();
+}
+function zoomInside(factor: number, clientX?: number, clientY?: number) {
+  const page = insidePages.at(-1);
+  if (!page?.view) return;
+  const r = $(".inside-scroll").getBoundingClientRect(), v = page.view;
+  const px = clientX === undefined ? r.width / 2 : clientX - r.left;
+  const py = clientY === undefined ? r.height / 2 : clientY - r.top;
+  const zoom = Math.max(.015, Math.min(3, v.zoom * factor));
+  v.x += px / v.zoom - px / zoom;
+  v.y += py / v.zoom - py / zoom;
+  v.zoom = zoom;
+  viewInside();
+}
+let insideDrag: { x: number; y: number; pointer: number } | undefined;
+$("#dialog-body").addEventListener("wheel", (event) => {
+  if (!(event.target as Element).closest(".inside-scroll")) return;
+  event.preventDefault();
+  zoomInside(event.deltaY < 0 ? 1.15 : 1 / 1.15, event.clientX, event.clientY);
+}, { passive: false });
+$("#dialog-body").addEventListener("pointerdown", (event) => {
+  const surface = (event.target as Element).closest<HTMLElement>(
+    ".inside-scroll",
+  );
+  if (
+    !surface || (event.target as Element).closest(".component-body,.pin") ||
+    event.button !== 0
+  ) return;
+  insideDrag = { x: event.clientX, y: event.clientY, pointer: event.pointerId };
+  surface.setPointerCapture(event.pointerId);
+});
+$("#dialog-body").addEventListener("pointermove", (event) => {
+  const v = insidePages.at(-1)?.view;
+  if (!insideDrag || !v || event.pointerId !== insideDrag.pointer) return;
+  v.x -= (event.clientX - insideDrag.x) / v.zoom;
+  v.y -= (event.clientY - insideDrag.y) / v.zoom;
+  insideDrag.x = event.clientX;
+  insideDrag.y = event.clientY;
+  viewInside();
+});
+$("#dialog-body").addEventListener("pointerup", () => insideDrag = undefined);
+$("#dialog-body").addEventListener(
+  "pointercancel",
+  () => insideDrag = undefined,
+);
+$("#dialog-body").addEventListener("keydown", (event) => {
+  const body = (event.target as Element).closest<HTMLElement>(
+    "#inside-circuit .component-body",
+  );
+  if (body && ["Enter", " "].includes(event.key)) {
+    event.preventDefault();
+    event.stopPropagation();
+    body.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  }
+});
+$("#dialog-body").addEventListener("change", (event) => {
+  if ((event.target as Element).id !== "inside-find") return;
+  const page = insidePages.at(-1),
+    c = page?.circuit?.components.find((n) =>
+      n.id === (event.target as HTMLSelectElement).value
+    );
+  if (!c || !page) return;
+  const r = $(".inside-scroll").getBoundingClientRect();
+  page.view = { x: c.x - r.width / 2, y: c.y - r.height / 2, zoom: 1 };
+  viewInside();
+  $("#inside-circuit").querySelector<HTMLElement>(
+    `[data-node="${CSS.escape(c.id)}"] .component-body`,
+  )?.focus({ preventScroll: true });
+});
 $("#dialog-body").addEventListener("click", (event) => {
   const target = (event.target as Element).closest<HTMLElement>(
-    "[data-inside-level],[data-node],#inside-back,#inside-open-circuit",
+    "[data-inside-level],#inside-circuit .component-body,#inside-back,#inside-open-circuit,#inside-fit,#inside-zoom-in,#inside-zoom-out",
   );
   if (!target) return;
   if (target.dataset.insideLevel !== undefined) {
@@ -2476,21 +2606,35 @@ $("#dialog-body").addEventListener("click", (event) => {
     paintInside();
     return;
   }
+  if (target.id === "inside-fit") {
+    fitInside();
+    return;
+  }
+  if (target.id === "inside-zoom-in" || target.id === "inside-zoom-out") {
+    zoomInside(target.id === "inside-zoom-in" ? 1.25 : .8);
+    return;
+  }
   if (target.id === "inside-back") {
+    insidePages.pop();
     paintInside();
     return;
   }
   if (target.id === "inside-open-circuit") {
     const page = insidePages.at(-1);
-    if (page) {
+    if (page?.circuit) {
+      persist();
+      mode = "playground";
+      localStorage.setItem("literal.mode", mode);
       $<HTMLDialogElement>("#dialog").close();
-      load(page.circuit);
+      load(clone(page.circuit));
     }
     return;
   }
   const page = insidePages.at(-1),
-    c = page?.circuit.components.find((c) => c.id === target.dataset.node);
-  if (page && c) navigateInside(c, page.circuit, page.simulation);
+    c = page?.circuit?.components.find((c) =>
+      c.id === target.closest<HTMLElement>("[data-node]")?.dataset.node
+    );
+  if (page?.circuit && c) navigateInside(c, page.circuit, page.simulation);
 });
 function selectCourse(index: number) {
   persist();
@@ -2652,6 +2796,11 @@ function renderDiscover() {
       }>Back</button>${
         lessonStep < course.steps.length - 1
           ? '<button data-lesson="next">Next step</button>'
+          : ""
+      }${
+        ["half-adder", "full-adder", "byte-adder", "mux", "latch", "alu"]
+            .includes(course.id)
+          ? '<button data-lesson="save-lab">Save this gate</button>'
           : ""
       }<button data-lesson="check" ${
         checkingLab ? "disabled" : ""

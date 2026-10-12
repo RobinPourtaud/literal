@@ -42,8 +42,8 @@ export const advancedCourses: Course[] = [
     ),
     step(
       "Keep the half adder",
-      "Select the gates and output probes, keeping A and B outside. Create component can save this as Half adder. Pass the check to continue.",
-      "Saving is optional for these labs. Your course canvas is kept automatically; saved components are useful for the next addition.",
+      "Use Save this gate to select the whole working half adder automatically. Check the preview: inputs A and B; outputs Sum and Carry. Save it for the next course.",
+      "The external Power controls stay outside the component. Only the XOR, AND, and output probes are saved. Your course canvas is also kept automatically.",
     ),
   ]),
   lab("full-adder", "Include a carry · Full adder", [], [
@@ -1202,4 +1202,42 @@ export function applyProgram(circuit: Circuit, source: string) {
     fail("No bus ROM.");
   rom.source = source;
   rom.contents = [...assemble(source).rom];
+}
+
+export function labGateMembers(id: string, circuit: Circuit): Set<string> {
+  const outputs = id === "half-adder" || id === "full-adder"
+    ? ["Sum", "Carry"]
+    : id === "byte-adder"
+    ? Array.from({ length: 8 }, (_, i) => `S${i}`).concat("Cout")
+    : id === "latch"
+    ? ["Q", "Qbar"]
+    : ["mux", "alu"].includes(id)
+    ? ["Y"]
+    : [];
+  if (!outputs.length) {
+    throw Error(
+      "This course contains modeled devices; save the circuit file instead.",
+    );
+  }
+  const controls = id === "half-adder"
+    ? ["A", "B"]
+    : id === "full-adder"
+    ? ["A", "B", "Cin"]
+    : id === "byte-adder"
+    ? Array.from({ length: 8 }, (_, i) => `A${i}`).concat(
+      Array.from({ length: 8 }, (_, i) => `B${i}`),
+      "Cin",
+    )
+    : id === "latch"
+    ? ["S", "R"]
+    : ["A", "B", "S"];
+  const external = new Set(controls.map((label) => named(circuit, label).id));
+  const members = new Set<string>();
+  const visit = (node: string) => {
+    if (external.has(node) || members.has(node)) return;
+    members.add(node);
+    circuit.wires.filter((w) => w.to === node).forEach((w) => visit(w.from));
+  };
+  outputs.forEach((label) => visit(named(circuit, label).id));
+  return members;
 }

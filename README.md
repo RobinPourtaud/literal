@@ -261,3 +261,16 @@ native mouse or touch input.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md). Original code is MIT licensed. Logisim
 is an inspiration; no Logisim source is included.
+
+### Inspecting and saving gate networks
+
+**See inside** opens a fitted circuit viewer. Use zoom, drag the background to
+pan, or choose **Find a component** to locate a gate in a large ALU. Click a
+component or press Enter to descend. Back and breadcrumbs restore the previous
+level and view. The displayed signals are a snapshot of the parent circuit.
+**Edit a copy in Playground** preserves the Discover workspace.
+
+The custom-component dialog previews the selected parts and all external pin
+names before saving. A selected Power block stays internal and does not become
+an input pin. Gate courses provide **Save this gate**, which selects the
+complete working network and leaves the external controls out automatically.
