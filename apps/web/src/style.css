@@ -1514,3 +1514,12 @@ dialog::backdrop {
   line-height: 1.8;
   margin: 0;
 }
+.lesson-heading {
+  flex-wrap: wrap;
+}
+.lesson-heading .lesson-progress {
+  white-space: nowrap;
+}
+.lesson-hint-button {
+  flex-shrink: 0;
+}
