@@ -37,6 +37,7 @@ import {
   Download,
   FilePlus,
   FolderOpen,
+  Github,
   Hand,
   Minus,
   MousePointer2,
@@ -71,6 +72,7 @@ const icons = {
   Download,
   FilePlus,
   FolderOpen,
+  Github,
   Hand,
   Minus,
   MousePointer2,
@@ -148,7 +150,16 @@ let clockHz = Math.max(
   0.1,
   Math.min(10000, Number(localStorage.getItem("literal.clockHz")) || 500),
 );
-let clockCredit = 0, clockLast = 0, clockMeasuredAt = 0, clockEdges = 0;
+const activeClocks = new Map<
+  string,
+  {
+    last: number;
+    measuredAt: number;
+    credit: number;
+    edges: number;
+    actual: number;
+  }
+>();
 let space = false, pasted = 0, tab: "inspect" | "truth" = "inspect";
 let drag: {
   type: "nodes" | "pan" | "box";
@@ -225,10 +236,10 @@ const groups: { name: string; kinds: Kind[] }[] = [
 $("#app").innerHTML =
   `<header class="topbar"><a class="brand" href="#" aria-label="Literal home"><img src="/mark.svg" width="36" height="36" alt=""><strong>Literal</strong><span>logic circuits</span></a><nav><button id="library-toggle">${
     icon("PanelLeft")
-  }<span>Components</span></button><button id="mode-button">Playground</button><button id="karnaugh-tool">Karnaugh</button><button id="help">Reference</button></nav><a class="source-link" href="https://github.com/RobinPourtaud/literal" target="_blank" rel="noopener">Source ${
-    icon("ArrowUpRight")
+  }<span>Components</span></button><button id="mode-button">Playground</button><button id="karnaugh-tool">Karnaugh</button><button id="help">Reference</button></nav><a class="source-link" href="https://github.com/RobinPourtaud/literal" target="_blank" rel="noopener" aria-label="Literal on GitHub" title="GitHub">${
+    icon("Github")
   }</a></header>
-<div class="shell"><aside class="library"><div class="library-scroll"><div class="sidebar-title">COMPONENTS <kbd>click to place</kbd></div><section class="custom-library"><h2>CUSTOM</h2><button id="create-custom">+ Create component</button><div id="custom-items"></div></section>${
+<div class="shell"><aside class="library"><div class="library-scroll"><div class="sidebar-title">COMPONENTS</div><section class="custom-library"><h2>CUSTOM</h2><button id="create-custom">+ Create component</button><div id="custom-items"></div></section>${
     groups.map((g) =>
       `<section class="palette-group"><h2>${g.name}</h2>${
         g.kinds.map((k) =>
@@ -318,12 +329,6 @@ $("#app").innerHTML =
     icon("Undo2")
   }</button><button id="redo" class="icon-button" aria-label="Redo" title="Redo (⌘/Ctrl+Shift+Z)">${
     icon("Redo2")
-  }</button><span class="divider"></span><button id="step" title="Toggle all clocks once">${
-    icon("StepForward")
-  }<span>Step</span></button><button id="run" class="primary">${
-    icon("Play")
-  }Run clock</button><label class="clock-frequency">Clock <input id="clock-frequency" type="number" min="0.1" max="10000" step="0.1" value="${clockHz}" aria-label="Clock frequency in Hz"> Hz</label><output id="clock-measured" title="Measured clock frequency"></output><button id="reset" class="icon-button" aria-label="Reset simulation" title="Reset clocks, registers, RAM, and screens">${
-    icon("RotateCcw")
   }</button></div></div>
 <div class="editor"><section class="board-panel" aria-label="Circuit editor"><section id="discover-guide" aria-label="Discover tutorial" hidden></section><div class="board-header"><div class="board-tools"><button id="place-center" hidden>Place at center</button><button id="select-tool" class="active" title="Select (V)">${
     icon("MousePointer2")
@@ -339,13 +344,13 @@ $("#app").innerHTML =
     icon("Plus")
   }</button><button id="fit" class="icon-button" aria-label="Fit circuit" title="Fit circuit (F)">${
     icon("Scan")
+  }</button><button id="details-toggle" class="icon-button" aria-label="Show or hide inspector" title="Show or hide inspector">${
+    icon("PanelRight")
   }</button></div></div>
 <div class="board-wrap"><svg id="board" tabindex="0" aria-label="Circuit canvas. Click components to select, input blocks to toggle, and pins to connect. Space and drag to pan." xmlns="http://www.w3.org/2000/svg"><defs><pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse"><circle cx="0" cy="0" r="1" fill="#d9dfd0"/></pattern></defs><rect id="grid-background" fill="url(#grid)"/><g id="drawing"></g><g id="preview" aria-hidden="true"></g></svg><div id="empty" hidden><h2>Empty circuit</h2><p>Choose a component, then click the canvas.</p><button class="text-button" data-example="half-adder">Open half adder ${
     icon("ArrowUpRight")
-  }</button></div></div><div class="canvas-footer"><span id="hint">Click an input to toggle it. Connect an output pin to an input pin.</span><span>20 px grid</span></div></section>
-<aside class="inspector"><div id="pinned-devices"></div><div class="tabs" role="tablist" aria-label="Circuit details"><button id="inspect-tab" role="tab" aria-selected="true" aria-controls="details">Selection</button><button id="truth-tab" role="tab" aria-selected="false" aria-controls="details">Truth table</button></div><div id="details" role="tabpanel"></div></aside></div><footer class="statusbar"><span id="save-state"></span><span id="counts"></span><span id="simulation-state"></span><button id="details-toggle" title="Show or hide inspector">${
-    icon("PanelRight")
-  }</button></footer></main></div>
+  }</button></div><div id="hint" class="canvas-hint" role="status" hidden></div></div></section>
+<aside class="inspector"><div id="pinned-devices"></div><div class="tabs" role="tablist" aria-label="Circuit details"><button id="inspect-tab" role="tab" aria-selected="true" aria-controls="details">Selection</button><button id="truth-tab" role="tab" aria-selected="false" aria-controls="details">Truth table</button></div><div id="details" role="tabpanel"></div></aside></div></main></div>
 <input id="file-input" type="file" accept=".literal,.json,application/json" hidden><dialog id="dialog"><div class="dialog-heading"><h2 id="dialog-title"></h2><button id="close-dialog" class="icon-button" aria-label="Close dialog">${
     icon("X")
   }</button></div><div id="dialog-body"></div></dialog><div id="toast" role="status" aria-live="polite"></div>`;
@@ -362,10 +367,8 @@ function persist() {
       mode === "discover" ? "literal.discover.circuit" : "literal.circuit",
       JSON.stringify(circuit),
     );
-    $("#save-state").textContent = "✓ Saved in this browser";
   } catch {
-    $("#save-state").textContent =
-      "Autosave unavailable · download to keep your circuit";
+    notify("Autosave unavailable · download to keep your circuit");
   }
 }
 function evaluate() {
@@ -386,48 +389,94 @@ function mutate(action: () => void) {
   persist();
   render();
 }
-function startClock() {
-  clockLast = clockMeasuredAt = performance.now();
-  clockCredit = clockEdges = 0;
+function startClock(id: string) {
+  const now = performance.now();
+  activeClocks.set(id, {
+    last: now,
+    measuredAt: now,
+    credit: 0,
+    edges: 0,
+    actual: 0,
+  });
+  if (running) return;
   running = setInterval(() => {
-    const now = performance.now();
-    clockCredit = Math.min(
-      clockCredit + (now - clockLast) * clockHz * 2 / 1000,
-      clockHz * 2,
-    );
-    clockLast = now;
-    const deadline = now + 12;
-    let changed = false;
-    while (clockCredit >= 1 && performance.now() < deadline) {
-      tick(false);
-      clockCredit--;
-      clockEdges++;
-      changed = true;
-      if (Object.values(memory.processors ?? {}).some((cpu) => cpu.halted)) {
-        stop();
-        break;
+    const now = performance.now(), deadline = now + 12;
+    for (const [id, state] of activeClocks) {
+      const clock = circuit.components.find((c) =>
+        c.id === id && c.kind === "CLOCK"
+      );
+      if (!clock) {
+        activeClocks.delete(id);
+        continue;
+      }
+      const hz = clock.frequency ?? clockHz;
+      state.credit = Math.min(
+        state.credit + (now - state.last) * hz * 2 / 1000,
+        hz * 2,
+      );
+      state.last = now;
+    }
+    let changed = false, pending = true;
+    while (pending && performance.now() < deadline) {
+      pending = false;
+      for (const [id, state] of activeClocks) {
+        if (state.credit < 1) continue;
+        const clock = circuit.components.find((c) => c.id === id)!;
+        clock.value = clock.value === 1 ? 0 : 1;
+        evaluate();
+        state.credit--;
+        state.edges++;
+        changed = pending = true;
+        if (Object.values(memory.processors ?? {}).some((cpu) => cpu.halted)) {
+          stop();
+          break;
+        }
+        if (performance.now() >= deadline) break;
       }
     }
-    if (changed) render();
-    if (now - clockMeasuredAt >= 1000) {
-      $("#clock-measured").textContent = `${
-        (clockEdges * 500 / (now - clockMeasuredAt)).toFixed(1)
-      } Hz actual`;
-      clockMeasuredAt = now;
-      clockEdges = 0;
+    for (const state of activeClocks.values()) {
+      if (now - state.measuredAt >= 1000) {
+        state.actual = state.edges * 500 / (now - state.measuredAt);
+        state.measuredAt = now;
+        state.edges = 0;
+      }
     }
+    if (!activeClocks.size) stop();
+    if (changed) render();
+    updateClockReadout();
   }, 16);
 }
-$("#clock-frequency").addEventListener("change", (event) => {
+function updateClockReadout() {
+  const control = document.querySelector<HTMLElement>("#clock-measured");
+  if (control) {
+    control.textContent = `${
+      (activeClocks.get(control.dataset.clock!)?.actual ?? 0).toFixed(1)
+    } Hz actual`;
+  }
+  const button = document.querySelector<HTMLElement>("#run");
+  if (button) {
+    button.innerHTML = activeClocks.has(button.dataset.clock!)
+      ? `${icon("Pause")}Pause clock`
+      : `${icon("Play")}Run clock`;
+  }
+}
+$("#details").addEventListener("change", (event) => {
   const input = event.target as HTMLInputElement;
-  clockHz = Math.max(0.1, Math.min(10000, Number(input.value) || 0.1));
-  input.value = String(clockHz);
-  clockCredit = 0;
-  localStorage.setItem("literal.clockHz", String(clockHz));
+  if (!input.matches("[data-clock-frequency]")) return;
+  const clock = circuit.components.find((c) =>
+    c.id === input.dataset.clockFrequency && c.kind === "CLOCK"
+  );
+  if (!clock) return;
+  const hz = Math.max(.1, Math.min(10000, Number(input.value) || .1));
+  input.value = String(hz);
+  const state = activeClocks.get(clock.id);
+  if (state) state.credit = 0;
+  mutate(() => clock.frequency = hz);
 });
 function stop() {
   if (running) clearInterval(running);
   running = null;
+  activeClocks.clear();
 }
 function load(next: Circuit) {
   stop();
@@ -612,22 +661,6 @@ function render() {
     "disabled",
     !circuit.components.some((c) => selected.has(c.id)),
   );
-  const clocks = circuit.components.some((c) => c.kind === "CLOCK");
-  $("#step").toggleAttribute("disabled", !clocks);
-  $("#run").toggleAttribute("disabled", !clocks);
-  $("#run").innerHTML = running
-    ? `${icon("Pause")}Pause clock`
-    : `${icon("Play")}Run clock`;
-  $("#counts").textContent =
-    `${circuit.components.length} components · ${circuit.wires.length} wires`;
-  $("#simulation-state").textContent = sim.warnings.length
-    ? sim.warnings[0]
-    : running
-    ? circuit.components.some((c) => c.kind === "BUS_CPU")
-      ? "Computer clock running"
-      : "Clock running · 2 Hz"
-    : "Simulation live";
-  $("#simulation-state").classList.toggle("warning", !!sim.warnings.length);
   $("#hint").textContent = wiring
     ? "Click the other pin to connect. Esc cancels."
     : placement
@@ -635,6 +668,7 @@ function render() {
     : panMode
     ? "Drag the canvas to pan. V returns to selection."
     : "Click inputs to toggle. Click two pins to wire. Space + drag to pan.";
+  $("#hint").hidden = !wiring && !placement && !panMode;
   for (const b of document.querySelectorAll<HTMLElement>("[data-place]")) {
     b.classList.toggle("active", b.dataset.place === placement);
   }
@@ -644,6 +678,7 @@ function render() {
   board.classList.toggle("panning", panMode || space);
   renderBoard();
   renderDetails();
+  updateClockReadout();
   if (node) {
     const group = document.querySelector(
       `[data-node="${CSS.escape(node)}"].component`,
@@ -727,10 +762,12 @@ function renderDetails() {
       )
     }</p><details class="component-explanation"><summary>How to use it</summary><p>${
       esc(explanations[c.kind])
-    }</p></details><label class="field">Label<input id="component-label" value="${
+    }</p></details>${
+      c.kind === "CLOCK" ? clockControls(c) : ""
+    }<label class="field">Label<input id="component-label" value="${
       esc(c.label)
     }" maxlength="80"></label><div class="position-fields"><label class="field">X<input id="component-x" type="number" step="20" value="${c.x}" min="-100000" max="100000"></label><label class="field">Y<input id="component-y" type="number" step="20" value="${c.y}" min="-100000" max="100000"></label></div>${
-      c.kind === "INPUT" || c.kind === "CLOCK" || c.kind === "POWER"
+      c.kind === "INPUT" || c.kind === "POWER"
         ? `<button id="toggle-value" class="wide-button">Toggle ${
           c.label ? esc(c.label) : "input"
         } · ${sim.values[c.id]} ${icon("ToggleRight")}</button>`
@@ -834,6 +871,15 @@ function renderDetails() {
       `<p class="diagnostic">${sim.warnings.map(esc).join("<br>")}</p>`,
     );
   }
+}
+function clockControls(c: Component) {
+  return `<section class="clock-controls"><h3>Clock controls</h3><label class="field">Frequency (Hz)<input id="clock-frequency" data-clock-frequency="${c.id}" type="number" min="0.1" max="10000" step="0.1" value="${
+    c.frequency ?? clockHz
+  }"></label><output id="clock-measured" data-clock="${c.id}"></output><div class="clock-actions"><button id="run" data-clock="${c.id}" class="primary"></button><button id="step" data-clock="${c.id}" title="Toggle this clock once">${
+    icon("StepForward")
+  }Step</button></div><button id="reset" class="wide-button">${
+    icon("RotateCcw")
+  }Reset simulation</button></section>`;
 }
 function screenPreview(c: Component) {
   const pixels = memory.screens?.[c.id] ?? [];
@@ -1147,6 +1193,26 @@ $("#app").addEventListener("click", (e) => {
   const target = e.target as Element,
     b = target.closest<HTMLElement>("button,[data-example],.pin,.wire");
   if (!b) return;
+  if (b.dataset.clock && (b.id === "run" || b.id === "step")) {
+    const clock = circuit.components.find((c) =>
+      c.id === b.dataset.clock && c.kind === "CLOCK"
+    );
+    if (!clock) return;
+    if (b.id === "run") {
+      if (activeClocks.has(clock.id)) {
+        activeClocks.delete(clock.id);
+        if (!activeClocks.size) stop();
+      } else startClock(clock.id);
+    } else {
+      activeClocks.delete(clock.id);
+      if (!activeClocks.size) stop();
+      clock.value = clock.value === 1 ? 0 : 1;
+      evaluate();
+      persist();
+    }
+    render();
+    return;
+  }
   if (b.dataset.about) {
     const kind = b.dataset.about as Kind;
     dialog(
@@ -1259,12 +1325,6 @@ $("#app").addEventListener("click", (e) => {
       });
     },
     "name-button": rename,
-    step: () => tick(),
-    run: () => {
-      if (running) stop();
-      else startClock();
-      render();
-    },
     "karnaugh-tool": () => {
       stop();
       releaseKeyboard();
@@ -1535,6 +1595,7 @@ board.addEventListener("pointerdown", (e) => {
     ? "nodes"
     : "box";
   if (type === "nodes" && id) {
+    tab = "inspect";
     if (e.shiftKey) {
       if (selected.has(id)) selected.delete(id);
       else selected.add(id);
@@ -1605,7 +1666,7 @@ function endDrag(e: PointerEvent, cancel = false) {
     } else if (!d.additive && d.positions.size === 1) {
       const c = circuit.components.find((c) => d.positions.has(c.id));
       if (
-        c && (c.kind === "INPUT" || c.kind === "CLOCK" || c.kind === "POWER")
+        c && (c.kind === "INPUT" || c.kind === "POWER")
       ) {
         toggle(c);
         return;
@@ -1649,8 +1710,9 @@ board.addEventListener("keydown", (e) => {
   } else if (e.key === "Enter" && target.classList.contains("component-body")) {
     const id = (target.closest(".component") as HTMLElement).dataset.node!;
     selected = new Set([id]);
+    tab = "inspect";
     const c = circuit.components.find((c) => c.id === id)!;
-    if (c.kind === "INPUT" || c.kind === "CLOCK" || c.kind === "POWER") {
+    if (c.kind === "INPUT" || c.kind === "POWER") {
       toggle(c);
     } else render();
   }

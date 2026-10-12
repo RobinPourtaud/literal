@@ -80,8 +80,9 @@ try {
     ),
     1,
   );
+  await select("clock");
   await run(
-    `(()=>{const hz=document.querySelector('#clock-frequency');hz.value='2';hz.dispatchEvent(new Event('change'));document.querySelector('#run').click();return 'ok'})()`,
+    `(()=>{const hz=document.querySelector('#clock-frequency');hz.value='2';hz.dispatchEvent(new Event('change',{bubbles:true}));document.querySelector('#run').click();return 'ok'})()`,
   );
   const elapsed = await run(
     `(async()=>{const before=(await window.literal.getComputerState()).cycles;await new Promise(resolve=>setTimeout(resolve,1100));return JSON.stringify((await window.literal.getComputerState()).cycles-before)})()`,
@@ -89,7 +90,7 @@ try {
   assert.ok(elapsed >= 2 && elapsed <= 3, `${elapsed} cycles at 2 Hz`);
   await run(`(()=>{document.querySelector('#run').click();return 'ok'})()`);
   const faster = await run(
-    `(async()=>{const hz=document.querySelector('#clock-frequency');hz.value='100';hz.dispatchEvent(new Event('change'));document.querySelector('#run').click();const before=(await window.literal.getComputerState()).cycles;await new Promise(resolve=>setTimeout(resolve,500));const count=(await window.literal.getComputerState()).cycles-before;document.querySelector('#run').click();return JSON.stringify(count)})()`,
+    `(async()=>{const hz=document.querySelector('#clock-frequency');hz.value='100';hz.dispatchEvent(new Event('change',{bubbles:true}));document.querySelector('#run').click();const before=(await window.literal.getComputerState()).cycles;await new Promise(resolve=>setTimeout(resolve,500));const count=(await window.literal.getComputerState()).cycles-before;document.querySelector('#run').click();return JSON.stringify(count)})()`,
   );
   assert.ok(faster >= 5, `${faster} cycles after increasing frequency`);
   await select("alu");

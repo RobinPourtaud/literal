@@ -63,6 +63,7 @@ export interface Component {
   keyMap?: Record<string, string>;
   contents?: number[];
   source?: string;
+  frequency?: number;
 }
 export interface Wire {
   id: string;
@@ -968,6 +969,11 @@ export function parseCircuit(text: string): Circuit {
         (n.kind !== "BUS_ROM" || typeof n.source !== "string" ||
           n.source.length > 200000)
       ) throw Error("Invalid ROM assembly source.");
+      if (
+        n.frequency !== undefined &&
+        (n.kind !== "CLOCK" || !Number.isFinite(n.frequency) ||
+          n.frequency < .1 || n.frequency > 10000)
+      ) throw Error("Invalid clock frequency (0.1–10000 Hz).");
       ids.add(n.id);
       return {
         id: n.id,
@@ -979,6 +985,7 @@ export function parseCircuit(text: string): Circuit {
         ...(n.kind === "CUSTOM" ? { definition: n.definition } : {}),
         ...(n.keyMap === undefined ? {} : { keyMap: { ...n.keyMap } }),
         ...(n.source === undefined ? {} : { source: n.source }),
+        ...(n.frequency === undefined ? {} : { frequency: n.frequency }),
         ...(n.contents === undefined ? {} : { contents: [...n.contents] }),
       };
     });

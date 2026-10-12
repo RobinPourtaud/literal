@@ -407,8 +407,10 @@ export function draw(
         ? ` ${hexValue(sim.inputs[c.id])?.toString(16).toUpperCase() ?? "X"}`
         : ""
     }${
-      c.kind === "INPUT" || c.kind === "CLOCK"
+      c.kind === "INPUT"
         ? ` ${sim.values[c.id]}. Enter to toggle.`
+        : c.kind === "CLOCK"
+        ? ". Enter for clock controls."
         : ""
     }">${
       shape(c, sim.values[c.id], sim.inputs[c.id], circuit, sim)

@@ -119,7 +119,9 @@ for its controls in the right panel, or pin it there for continuous inspection.
 ROM accepts assembly or hex bytes; RAM accepts hex writes. Keyboard controls
 include virtual keys, physical capture, and remapping.
 
-Use **Run clock** and adjust **Clock Hz** while running. The measured rate shows
+Select a **Clock** component to access **Run clock**, **Step**, and **Frequency
+(Hz)** in the right panel. Each clock runs independently and keeps its frequency
+in the circuit file. Adjust its frequency while running. The measured rate shows
 when the circuit cannot reach the requested frequency. At slow rates, hold keys
 long enough for the program to poll them. **Step** toggles the clock once.
 
@@ -215,10 +217,11 @@ browser tab for this worktree, and run `deno task browser-check`. Run
 reuse. Run `deno task computer-check` for screen writes, BIOS execution, device
 controls, adjustable clock frequency, recursive transistor inspection, and
 discovery mode. Run `deno task discover-check` to check the first-gate lesson,
-descriptions, saving, and persistence. Computer, Discover, and API checks
-preserve the browser's saved circuits, library, mode, and preferences. The
-checks dispatch DOM pointer and keyboard events through Orca's browser
-evaluation API; they do not certify native mouse or touch input.
+descriptions, saving, and persistence. Run `deno task clock-check` to verify
+independent playback, saved frequencies, and the compact layout. Computer,
+Discover, and API checks preserve the browser's saved circuits, library, mode,
+and preferences. The checks dispatch DOM pointer and keyboard events through
+Orca's browser evaluation API; they do not certify native mouse or touch input.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md). Original code is MIT licensed. Logisim
 is an inspiration; no Logisim source is included.

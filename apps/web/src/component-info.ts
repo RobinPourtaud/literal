@@ -70,7 +70,7 @@ export const explanations: Record<Kind, string> = {
   LED:
     "Connect one signal. High lights it, low turns it off, and an unknown signal is amber. It is an indicator, rather than an electrical diode model.",
   CLOCK:
-    "Connect its output to clocked components. Step toggles all clocks once. Run clock toggles continuously at the frequency in the toolbar. Registers capture on rising edges, so two steps make a full cycle.",
+    "Connect its output to clocked components. Select the clock to set its frequency and run, pause, or step it from the right panel. Each clock has its own saved frequency and runs independently. Registers capture on rising edges, so two steps make a full cycle.",
   NOT:
     "One input, one output. 0 → 1 and 1 → 0. See inside reveals a PMOS pull-up and NMOS pull-down joined at the output.",
   AND:

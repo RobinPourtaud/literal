@@ -26,6 +26,7 @@
     "fmt-check": "deno fmt --check",
     "features-check": "deno run --allow-run=orca --allow-write=docs scripts/features_check.ts",
     "computer-check": "deno run --allow-run=orca --allow-write=docs scripts/computer_check.ts",
+    "clock-check": "deno run --allow-run=orca scripts/clock_check.ts",
     "discover-check": "deno run --allow-run=orca --allow-write=docs scripts/discover_check.ts",
     "api-check": "deno run --allow-run=orca scripts/api_check.ts"
   },

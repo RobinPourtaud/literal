@@ -199,3 +199,8 @@ The `assemble` action replaces the current canvas with a wired computer circuit.
 CPU execution reads ROM/RAM/peripheral pins and obtains arithmetic results from
 the gate ALU. Signals may be 0, 1, X (unknown), or Z (high impedance).
 Instruction control, registers, and memory remain behavioral models.
+
+CLOCK components accept an optional `frequency` in Hz, from 0.1 to 10000. It is
+saved with the circuit and controls that clock’s independent UI playback. The
+`clock` API action still toggles all clock components together when manually
+stepping.

@@ -382,3 +382,45 @@ test("gate selections infer shared boundary inputs and preserve unknown signals"
     /combinational/,
   );
 });
+
+Deno.test("clock frequencies round-trip and reject invalid component settings", () => {
+  const circuit: Circuit = {
+    version: 1,
+    name: "Clocks",
+    components: [{
+      id: "clock",
+      kind: "CLOCK",
+      label: "Clock",
+      x: 0,
+      y: 0,
+      frequency: 2.5,
+    }],
+    wires: [],
+  };
+  assert.equal(
+    parseCircuit(JSON.stringify(circuit)).components[0].frequency,
+    2.5,
+  );
+  for (const frequency of [0, -1, 10001, "fast", null]) {
+    assert.throws(
+      () =>
+        parseCircuit(
+          JSON.stringify({
+            ...circuit,
+            components: [{ ...circuit.components[0], frequency }],
+          }),
+        ),
+      /clock frequency/,
+    );
+  }
+  assert.throws(
+    () =>
+      parseCircuit(
+        JSON.stringify({
+          ...circuit,
+          components: [{ ...circuit.components[0], kind: "INPUT" }],
+        }),
+      ),
+    /clock frequency/,
+  );
+});

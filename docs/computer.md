@@ -6,8 +6,9 @@ through a 16-bit address / 8-bit data bus.
 
 ## Controls
 
-- **Run clock** starts execution; **Clock Hz** adjusts frequency while running.
-  The actual measured rate depends on browser and circuit performance.
+- Select the Clock component. Its right panel has **Run clock**, **Step**, and
+  **Frequency (Hz)**; frequency can change while running. The actual measured
+  rate depends on browser and circuit performance.
 - **Step** toggles clocks once; an instruction runs on each rising edge.
 - Click keyboard for virtual keys, physical capture, and key remapping.
 - Click screen for a preview; the framebuffer is also visible on the circuit.

@@ -178,6 +178,7 @@ kbd {
   font-size: 12px;
 }
 .gate-symbol {
+  flex: 0 0 23px;
   width: 23px;
   height: 23px;
   border: 1px solid var(--line);
@@ -326,20 +327,6 @@ kbd {
 #board.panning:active {
   cursor: grabbing;
 }
-.canvas-footer {
-  height: 31px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 15px;
-  font-size: 10px;
-  color: var(--muted);
-  border-top: 1px solid var(--line);
-  gap: 12px;
-}
-.canvas-footer span:last-child {
-  white-space: nowrap;
-}
 .inspector {
   width: 272px;
   border-left: 1px solid var(--line);
@@ -486,20 +473,6 @@ kbd {
   color: #8a6034;
   font-size: 11px;
   margin-top: 20px;
-}
-.statusbar {
-  display: flex;
-  align-items: center;
-  gap: 22px;
-  height: 33px;
-  border-top: 1px solid var(--line);
-  padding: 0 14px;
-  background: #fdfdfb;
-  font-size: 10px;
-  color: var(--muted);
-}
-#simulation-state {
-  margin-left: auto;
 }
 .warning {
   color: #9b6c33;
@@ -824,9 +797,6 @@ dialog::backdrop {
   .toolbar-actions {
     gap: 2px;
   }
-  .canvas-footer span:last-child {
-    display: none;
-  }
 }
 @media (max-width:650px) {
   .library {
@@ -873,17 +843,8 @@ dialog::backdrop {
   .board-tools button {
     padding: 6px;
   }
-  .statusbar {
-    gap: 8px;
-    padding: 0 8px;
-  }
   #counts {
     display: none;
-  }
-  .canvas-footer {
-    height: 36px;
-    font-size: 9px;
-    padding: 0 10px;
   }
   .hide-inspector .inspector {
     top: 139px;
@@ -1353,19 +1314,6 @@ dialog::backdrop {
   stroke-dasharray: 3 3;
 }
 
-.clock-frequency {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  white-space: nowrap;
-  font-size: 12px;
-}
-.clock-frequency input {
-  width: 76px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  padding: 5px;
-}
 #clock-measured {
   font-size: 11px;
   white-space: nowrap;
@@ -1554,4 +1502,37 @@ dialog::backdrop {
     grid-column: 1;
     grid-row: auto;
   }
+}
+
+.canvas-hint {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  padding: 7px 10px;
+  border-radius: 6px;
+  background: #fdfdfbee;
+  color: var(--muted);
+  font-size: 11px;
+  pointer-events: none;
+}
+.clock-controls {
+  margin: 16px 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.clock-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 10px 0;
+}
+.clock-controls output {
+  display: block;
+  font-size: 11px;
+  color: var(--muted);
+}
+.source-link svg {
+  width: 20px;
+  height: 20px;
 }
