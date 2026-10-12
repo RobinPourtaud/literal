@@ -228,7 +228,7 @@ $("#app").innerHTML =
   }<span>Components</span></button><button id="mode-button">Playground</button><button id="karnaugh-tool">Karnaugh</button><button id="help">Reference</button></nav><a class="source-link" href="https://github.com/RobinPourtaud/literal" target="_blank" rel="noopener">Source ${
     icon("ArrowUpRight")
   }</a></header>
-<div class="shell"><aside class="library"><div class="library-scroll"><div class="sidebar-title">COMPONENTS <kbd>click to place</kbd></div><section id="discover-guide" hidden></section><section class="custom-library"><h2>CUSTOM</h2><button id="create-custom">+ Create component</button><div id="custom-items"></div></section>${
+<div class="shell"><aside class="library"><div class="library-scroll"><div class="sidebar-title">COMPONENTS <kbd>click to place</kbd></div><section class="custom-library"><h2>CUSTOM</h2><button id="create-custom">+ Create component</button><div id="custom-items"></div></section>${
     groups.map((g) =>
       `<section class="palette-group"><h2>${g.name}</h2>${
         g.kinds.map((k) =>
@@ -305,13 +305,7 @@ $("#app").innerHTML =
         ).join("")
       }</section>`
     ).join("")
-  }<section class="examples"><h2>EXAMPLES</h2>${
-    examples.map((e) =>
-      `<button data-example="${e.id}" title="${e.description}">${e.name}${
-        icon("ChevronRight")
-      }</button>`
-    ).join("")
-  }</section></div><a class="maker-credit" href="https://pourtaud.dev" target="_blank" rel="noopener">${robin}<span>Made by Robin Pourtaud</span></a></aside>
+  }</div><a class="maker-credit" href="https://pourtaud.dev" target="_blank" rel="noopener">${robin}<span>Made by Robin Pourtaud</span></a></aside>
 <main class="workspace"><div class="toolbar"><button id="name-button" title="Rename circuit"><span id="circuit-name"></span>${
     icon("Pencil")
   }</button><div class="toolbar-actions"><button id="examples-button" title="Example circuits">Examples</button><button id="new" title="New circuit">${
@@ -331,7 +325,7 @@ $("#app").innerHTML =
   }Run clock</button><label class="clock-frequency">Clock <input id="clock-frequency" type="number" min="0.1" max="10000" step="0.1" value="${clockHz}" aria-label="Clock frequency in Hz"> Hz</label><output id="clock-measured" title="Measured clock frequency"></output><button id="reset" class="icon-button" aria-label="Reset simulation" title="Reset clocks, registers, RAM, and screens">${
     icon("RotateCcw")
   }</button></div></div>
-<div class="editor"><section class="board-panel" aria-label="Circuit editor"><div class="board-header"><div class="board-tools"><button id="place-center" hidden>Place at center</button><button id="select-tool" class="active" title="Select (V)">${
+<div class="editor"><section class="board-panel" aria-label="Circuit editor"><section id="discover-guide" aria-label="Discover tutorial" hidden></section><div class="board-header"><div class="board-tools"><button id="place-center" hidden>Place at center</button><button id="select-tool" class="active" title="Select (V)">${
     icon("MousePointer2")
   }Select</button><button id="pan-tool" title="Pan (H)">${
     icon("Hand")
@@ -599,7 +593,6 @@ function render() {
       .some((button) => !button.hidden);
   }
   $("#examples-button").hidden = mode === "discover";
-  $(".examples").hidden = mode === "discover";
   document.querySelectorAll<HTMLElement>("[data-example]").forEach((button) =>
     button.hidden = mode === "discover"
   );
