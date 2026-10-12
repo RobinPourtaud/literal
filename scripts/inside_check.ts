@@ -171,6 +171,44 @@ try {
   );
   await click("#close-dialog");
   await run(
+    `(()=>{document.querySelector('[data-node=cpu] .component-body').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));document.querySelector('#see-inside').click();return 'ok'})()`,
+  );
+  assert.ok(
+    (await run(`document.querySelector('#inside-find').textContent`)).includes(
+      "Instruction fetch and decode",
+    ),
+  );
+  for (
+    const label of ["Register writeback", "R0", "R0 bit 0", "R0 bit 0 master"]
+  ) {
+    await run(
+      `(()=>{const option=[...document.querySelector('#inside-find').options].find(o=>o.textContent.includes(${
+        JSON.stringify(label)
+      }+' · CUSTOM'));if(!option)throw Error('Missing '+${
+        JSON.stringify(label)
+      });document.querySelector('#inside-circuit [data-node="'+option.value+'"] .component-body').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));return 'ok'})()`,
+    );
+  }
+  assert.ok(
+    (await run(`document.querySelector('#inside-find').textContent`)).includes(
+      "NAND",
+    ),
+  );
+  const gateShot = await orca("screenshot");
+  await Deno.writeFile(
+    "/tmp/literal-gate-internals.png",
+    Uint8Array.from(atob(gateShot.data), (c) => c.charCodeAt(0)),
+  );
+  await run(
+    `(()=>{const option=[...document.querySelector('#inside-find').options].find(o=>o.textContent.includes(' · NAND'));document.querySelector('#inside-circuit [data-node="'+option.value+'"] .component-body').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));return 'ok'})()`,
+  );
+  assert.ok(
+    (await run(`document.querySelector('#inside-find').textContent`)).includes(
+      "NMOS",
+    ),
+  );
+  await click("#close-dialog");
+  await run(
     `(()=>{localStorage.setItem('literal.mode','discover');localStorage.setItem('literal.course','half-adder');localStorage.setItem('literal.discover.circuit',${
       JSON.stringify(JSON.stringify(half))
     });return 'ok'})()`,

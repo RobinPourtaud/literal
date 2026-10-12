@@ -8,6 +8,7 @@ import {
   type Memory,
   type Signal,
   simulate,
+  stepGateInstruction,
   transistorCircuit,
 } from "@literal/core";
 import type { Course, Lesson } from "./discover.ts";
@@ -175,7 +176,7 @@ export const advancedCourses: Course[] = [
     step(
       "Understand working memory",
       "Pass the check to continue to ROM. RAM holds changing program data such as variables, a stack, or a game position.",
-      "This RAM is a behavioral device. Its storage array is modeled directly; it is not a transistor-level SRAM implementation.",
+      "See inside shows address selectors and storage cells. Each cell holds its bits with feedback through NAND gates; changing an address selects a different cell.",
     ),
   ]),
   lab("rom", "Store a program · ROM", ["ROM"], [
@@ -235,7 +236,7 @@ export const advancedCourses: Course[] = [
     step(
       "Find the connected parts",
       "The practice machine has a clock, controller, gate ALU, ROM, RAM, keyboard, screen, and terminal. Four wires are missing. Select each device and use its inspector or See inside.",
-      "The controller executes Literal instructions behaviorally. The ALU uses gates. This is a wired teaching computer, not a complete transistor CPU.",
+      "The controller contains an instruction register, decoders, counters, and control gates. It fetches bytes from ROM and sends operands to the connected ALU. See inside opens those circuits.",
     ),
     step(
       "Restore the four wires",
@@ -250,7 +251,7 @@ export const advancedCourses: Course[] = [
     step(
       "Follow the instruction path",
       "Pass the execution check to continue. The CPU fetches ROM bytes, sends operands to the ALU, then writes a result through the RAM bus.",
-      "A rising clock edge executes one instruction in this model. Real CPUs usually split fetching and execution into multiple cycles.",
+      "Each instruction uses eight phases: fetch the opcode, fetch up to four operand bytes, execute, finish any stack transfer, then retire. Each phase takes a full clock cycle.",
     ),
   ]),
   lab("opcode", "Write instructions · Opcodes", [], [
@@ -360,7 +361,7 @@ export const advancedCourses: Course[] = [
     step(
       "Connect input to a program",
       "Pass the check to continue to animation. Programs can now combine stored state, input, and pixels.",
-      "The keyboard peripheral is behavioral. Its signals and addresses are visible in the circuit; the browser supplies real key events.",
+      "The browser supplies physical key events as code bits and a pressed signal. Address-decoder gates choose which bits the CPU reads.",
     ),
   ]),
   lab("animation", "Update frames · Animation", [], [
@@ -985,13 +986,8 @@ function machine(c: Circuit) {
   let state = simulate(c), key = 0, pressed = false;
   let instructions = 0;
   const tick = () => {
-    const input = {
-      [clock.id]: 0 as Signal,
-      ...(reset ? { [reset]: 0 as Signal } : {}),
-    };
     const keys = keyboard ? { [keyboard.id]: { code: key, pressed } } : {};
-    state = simulate(c, state.memory, input, keys);
-    state = simulate(c, state.memory, { ...input, [clock.id]: 1 }, keys);
+    state = stepGateInstruction(c, state.memory, keys);
     instructions++;
     if (state.warnings.length) fail(state.warnings[0]);
     if (state.memory.processors?.[cpu.id]?.error) {
@@ -1054,8 +1050,17 @@ function programLab(id: string, c: Circuit) {
       const ramIDs = new Set(
         broken.components.filter((n) => n.kind === "BUS_RAM").map((n) => n.id),
       );
-      broken.wires = broken.wires.filter((w) =>
-        !(ramIDs.has(w.to) && w.port === 24)
+      broken.components.push({
+        id: "disabled-ram-write",
+        kind: "GROUND",
+        label: "Writes disabled",
+        x: 0,
+        y: 0,
+      });
+      broken.wires = broken.wires.map((w) =>
+        ramIDs.has(w.to) && w.port === 24
+          ? { ...w, from: "disabled-ram-write", fromPort: 0 }
+          : w
       );
       const bad = machine(broken);
       bad.cycles(200);

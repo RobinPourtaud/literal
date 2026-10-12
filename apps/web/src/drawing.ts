@@ -219,7 +219,8 @@ function shape(
     }</text>`;
   }
   if (kind === "SEVEN_SEG" || kind === "HEX_DISPLAY") {
-    const segments = displaySegments(kind, inputs),
+    const segments = sim.memory.displays?.[c.id] ??
+        displaySegments(kind, inputs),
       height = kind === "SEVEN_SEG" ? 200 : 140;
     const strokes = [
       "M-20-58H20",

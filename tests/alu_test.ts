@@ -1,9 +1,9 @@
+import { Computer } from "./reference-computer.ts";
 import assert from "node:assert/strict";
 import {
   aluCircuit,
   aluNetlist,
   assemble,
-  Computer,
   evaluateALU,
   parseCircuit,
   simulate,

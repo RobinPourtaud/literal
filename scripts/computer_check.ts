@@ -1,8 +1,12 @@
 import assert from "node:assert/strict";
 const worktree = new URL("..", import.meta.url).pathname.replace(/\/$/, "");
+const page = Deno.args.at(-1);
+if (!page || !/^[0-9a-f-]{36}$/.test(page)) {
+  throw Error("Pass an Orca page id on the isolated localhost origin.");
+}
 async function orca(...args: string[]) {
   const result = await new Deno.Command("orca", {
-    args: [...args, "--worktree", `path:${worktree}`, "--json"],
+    args: [...args, "--page", page, "--worktree", `path:${worktree}`, "--json"],
     stdout: "piped",
     stderr: "piped",
   }).output();
@@ -24,6 +28,7 @@ async function run(code: string) {
     return value.result;
   }
 }
+assert.equal(await run(`location.hostname`), "localhost");
 const previous = await run(
   `JSON.stringify(Object.fromEntries(Object.entries(localStorage).filter(([key])=>key.startsWith('literal.'))))`,
 );
@@ -72,7 +77,7 @@ try {
     1,
   );
   await run(
-    `(()=>{window.literal.computer({action:'assemble',source:'LDI R0, 1\\nLDI R1, 2\\nLDI R2, 7\\nPIXEL R0, R1, R2\\nloop: JMP loop'});window.literal.computer({action:'step',steps:4});return 'ok'})()`,
+    `(async()=>{await window.literal.computer({action:'assemble',source:'LDI R0, 1\\nLDI R1, 2\\nLDI R2, 7\\nPIXEL R0, R1, R2\\nloop: JMP loop'});await window.literal.computer({action:'step',steps:4});return 'ok'})()`,
   );
   assert.equal(
     await run(
@@ -141,7 +146,7 @@ try {
     "PASS device controls, wired framebuffer, ROM/RAM, 2 Hz clock, recursive ALU and Discover palette",
   );
   await run(
-    `(()=>{document.querySelector('#examples-button').click();document.querySelector('[data-example="snake-computer"]').click();window.literal.computer({action:'step',steps:8000});return 'ok'})()`,
+    `(async()=>{document.querySelector('#examples-button').click();document.querySelector('[data-example="snake-computer"]').click();await window.literal.computer({action:'step',steps:8000});return 'ok'})()`,
   );
   assert.match(
     await run(`(await window.literal.getComputerState()).terminal`),

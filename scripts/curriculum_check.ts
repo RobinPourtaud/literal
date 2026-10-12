@@ -3,9 +3,13 @@ import { transistorCircuit } from "@literal/core";
 import { advancedCourses, solutions } from "../apps/web/src/curriculum.ts";
 import { labSolution } from "../tests/curriculum-fixtures.ts";
 const worktree = new URL("..", import.meta.url).pathname.replace(/\/$/, "");
+const page = Deno.args.at(-1);
+if (!page || !/^[0-9a-f-]{36}$/.test(page)) {
+  throw Error("Pass an Orca page id on the isolated localhost origin.");
+}
 async function orca(...args: string[]) {
   const output = await new Deno.Command("orca", {
-    args: [...args, "--worktree", `path:${worktree}`, "--json"],
+    args: [...args, "--page", page, "--worktree", `path:${worktree}`, "--json"],
     stdout: "piped",
     stderr: "piped",
   }).output();
@@ -31,6 +35,7 @@ const start = Math.max(
   0,
   advancedCourses.findIndex((c) => c.id === Deno.args[0]),
 );
+assert.equal(await run(`location.hostname`), "localhost");
 const previous = await run(
   `JSON.stringify(Object.fromEntries(Object.entries(localStorage).filter(([key])=>key.startsWith('literal.'))))`,
 );
@@ -155,7 +160,9 @@ try {
       );
     }
     if (course.id === "projection") {
-      await run(`window.literal.computer({action:'step',steps:1200})`);
+      for (let batch = 0; batch < 12; batch++) {
+        await run(`window.literal.computer({action:'step',steps:100})`);
+      }
       await click("[data-focus-node=screen]");
       await click("#fit");
       const shot = await orca("screenshot");

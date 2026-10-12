@@ -66,12 +66,12 @@ current. The latch starter contains two transistor NAND networks with feedback
 connections left open. Keeping them in one electrical network allows state to
 hold; feedback between separate custom gate instances is not supported.
 
-D flip-flops, memory arrays, CPU instruction control/registers, and peripherals
-are modeled devices. The byte-adder exercise uses learned gate networks. The
-practice computer provides a complete gate ALU so the course can focus on the
-visible bus, clock, device connections, and code. Use **See inside** to follow
-its combinational gates down to transistors. No transistor implementation is
-claimed for behavioral devices.
+D flip-flops, registers, counters, memory cells, CPU decoding and control, and
+peripheral address decoding are executable NAND networks. RAM uses a hierarchy
+of address selectors and feedback storage cells; untouched branches are lazy,
+with the same declared gates. **See inside** follows the actual circuit through
+registers, bit cells, NAND gates, and CMOS switches. Physical key events, clock
+timing, assembly, and rendering remain host functions.
 
 The 3D exercise computes an orthographic depth shear using integer CPU
 instructions and draws twelve edges with pixel writes. It is a wireframe

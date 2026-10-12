@@ -13,7 +13,7 @@ function runner(source: string) {
   const circuit = parseCircuit(JSON.stringify(computerCircuit(source)));
   let memory: Memory = { q: {}, clock: {} };
   const advance = (steps: number, keyboard = { code: 0, pressed: false }) => {
-    for (let i = 0; i < steps; i++) {
+    for (let i = 0; i < steps * 8; i++) {
       for (const value of [0, 1] as const) {
         circuit.components[0].value = value;
         memory = simulate(circuit, memory, {}, { keyboard }).memory;
@@ -40,7 +40,7 @@ Deno.test("removing a ROM wire faults the CPU instead of using hidden memory", (
   app.circuit.wires = app.circuit.wires.filter((w) =>
     !(w.from === "rom" && w.fromPort === undefined)
   );
-  assert.match(app.advance(1).processors!.cpu.error, /data bus is floating/);
+  assert.match(app.advance(1).processors!.cpu.error, /floating.*gate signals/);
 });
 Deno.test("changing the ALU output wire changes the CPU result", () => {
   const app = runner("LDI R0, 1\nADDI R0, 2\nHALT");

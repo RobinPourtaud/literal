@@ -162,7 +162,7 @@ export function agentTools(actions: LiteralActions): AgentTool[] {
     tool(
       "set_circuit",
       "Create or edit a circuit by supplying the complete Literal version-1 JSON document. Validate before replacement; resets simulation memory and autosaves. Undo restores the previous document. Get the current document first to preserve existing nodes and custom definitions. Single-bit wires use from, to, port and optional fromPort.",
-      object({ json: text(2_000_000, 1) }, ["json"]),
+      object({ json: text(20_000_000, 1) }, ["json"]),
       false,
       (p) => actions.replaceCircuit(p.json as string),
     ),
@@ -173,7 +173,7 @@ export function agentTools(actions: LiteralActions): AgentTool[] {
         values: {
           type: "array",
           minItems: 1,
-          maxItems: 500,
+          maxItems: 20_000,
           items: object({
             id: text(80, 1),
             value: { type: "integer", enum: [0, 1] },
@@ -201,7 +201,12 @@ export function agentTools(actions: LiteralActions): AgentTool[] {
       "create_component",
       "Save selected node ids as a reusable combinational component. Boundaries become named pins. Adds the definition to the current document and browser library. Stateful and interactive devices cannot be included.",
       object({
-        ids: { type: "array", minItems: 1, maxItems: 500, items: text(80, 1) },
+        ids: {
+          type: "array",
+          minItems: 1,
+          maxItems: 20_000,
+          items: text(80, 1),
+        },
         name: text(80, 1),
         description: text(600),
         color: text(7, 7),

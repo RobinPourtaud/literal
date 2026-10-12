@@ -30,7 +30,9 @@
     "clock-check": "deno run --allow-run=orca scripts/clock_check.ts",
     "curriculum-check": "deno run --allow-run=orca --allow-write=docs scripts/curriculum_check.ts",
     "discover-check": "deno run --allow-run=orca --allow-write=docs scripts/discover_check.ts",
-    "api-check": "deno run --allow-run=orca scripts/api_check.ts"
+    "api-check": "deno run --allow-run=orca scripts/api_check.ts",
+    "deploy": "deno task build && deno run -A npm:wrangler@4.149.0 deploy",
+    "deploy-check": "deno task build && deno run -A npm:wrangler@4.149.0 deploy --dry-run"
   },
   "fmt": {
     "exclude": [

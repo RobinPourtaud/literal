@@ -1,10 +1,16 @@
+import { compileCircuit, simulateGates } from "./gate-circuit.ts";
+import { gateComputationalKinds, gateDevice } from "./gate-devices.ts";
+import { engineFor, type GateState } from "./gate-netlist.ts";
+import {
+  gateNumber,
+  processorSnapshot,
+  storedWords,
+} from "./gate-snapshots.ts";
 import { solveSwitches } from "./transistors.ts";
 import {
   bitsOf,
   initialProcessor,
-  numberOf,
   type ProcessorState,
-  runProcessor,
 } from "./wired-computer.ts";
 import {
   type KeyboardState,
@@ -64,6 +70,7 @@ export interface Component {
   contents?: number[];
   source?: string;
   frequency?: number;
+  clockInput?: boolean;
 }
 export interface Wire {
   id: string;
@@ -80,6 +87,7 @@ export interface Circuit {
   definitions?: Definition[];
 }
 export interface Definition {
+  internal?: boolean;
   description?: string;
   id: string;
   name: string;
@@ -153,6 +161,8 @@ export const componentOutputLabel = (
     ? `D${port}`
     : "Output";
 export interface Memory {
+  gates?: Record<string, GateState>;
+  displays?: Record<string, Signal[]>;
   q: Record<string, Signal>;
   clock: Record<string, Signal>;
   screens?: Record<string, number[]>;
@@ -354,11 +364,21 @@ export function simulate(
   overrides: Record<string, Signal> = {},
   keyboards: Record<string, KeyboardState> = {},
 ): Simulation {
+  const compiled = compileCircuit(circuit);
+  if (compiled) {
+    return simulateGates(circuit, compiled, previous, overrides, keyboards);
+  }
   const components = new Map(circuit.components.map((c) => [c.id, c]));
   const incoming = new Map(
     circuit.wires.map((w) => [`${w.to}:${w.port}`, w]),
   );
+  const models = new Map(
+    circuit.components.filter((c) => gateComputationalKinds.includes(c.kind))
+      .map((c) => [c.id, gateDevice(c)!]),
+  );
   const memory: Memory = {
+    gates: { ...(previous.gates ?? {}) },
+    displays: {},
     q: {},
     clock: {},
     screens: {},
@@ -400,6 +420,11 @@ export function simulate(
       ];
     }
   }
+  for (const [id, model] of models) {
+    if (!memory.gates![id]) {
+      memory.gates![id] = engineFor(model).evaluate(model.inputs.map(() => 0));
+    }
+  }
   const warnings = new Set<string>();
   const primitiveCache = new Map<
     string,
@@ -427,29 +452,11 @@ export function simulate(
       if (component.kind === "INPUT" || component.kind === "CLOCK") {
         return values[id] = overrides[id] ?? component.value ?? 0;
       }
-      if (["REGISTER8", "COUNTER8"].includes(component.kind)) {
-        outputValues[id] = memory.bytes![id];
-        values[id] = outputValues[id][0];
-        return outputValues[id][outputPort] ?? "X";
+      if (models.has(id)) {
+        const outputs = engineFor(models.get(id)!).outputs(memory.gates![id]);
+        outputValues[id] = outputs;
+        return values[id] = outputs[outputPort] ?? outputs[0] ?? 0;
       }
-      if (component.kind === "KEYBOARD") {
-        const state = keyboards[id] ?? { code: 0, pressed: false };
-        outputValues[id] = [
-          ...Array.from(
-            { length: 8 },
-            (_, i) => (state.code >> i & 1) as Signal,
-          ),
-          state.pressed ? 1 : 0,
-        ];
-        values[id] = outputValues[id][0];
-        return outputValues[id][outputPort] ?? "X";
-      }
-      if (component.kind === "BUS_CPU") {
-        outputValues[id] = memory.processors![id].signals;
-        values[id] = outputValues[id][0];
-        return outputValues[id][outputPort] ?? "X";
-      }
-      if (component.kind === "DFF") return values[id] = memory.q[id];
       if (visiting.has(id)) {
         if (
           ["NMOS", "PMOS", "JUNCTION", "OUTPUT"].includes(component.kind) &&
@@ -470,55 +477,7 @@ export function simulate(
       );
       inputs[id] = ports;
       let value: Signal;
-      if (
-        ["BUS_ROM", "BUS_RAM", "BUS_KEYBOARD", "BUS_SCREEN"].includes(
-          component.kind,
-        )
-      ) {
-        const address = numberOf(ports.slice(0, 16));
-        const byte = address === null
-          ? null
-          : component.kind === "BUS_ROM"
-          ? address < 0x2000 ? component.contents?.[address] ?? 0 : 0
-          : component.kind === "BUS_RAM"
-          ? address >= 0x2000 && address < 0xf000
-            ? memory.busRAM![id][address] ?? 0
-            : 0
-          : component.kind === "BUS_SCREEN"
-          ? address >= 0xf000 && address < 0xf300
-            ? memory.screens![id][address - 0xf000]
-            : 0
-          : address === 0xff00
-          ? keyboards[id]?.code ?? 0
-          : address === 0xff01
-          ? +(keyboards[id]?.pressed ?? false)
-          : 0;
-        outputValues[id] = byte === null ? Array(8).fill("X") : bitsOf(byte, 8);
-        value = outputValues[id][0];
-      } else if (["RAM", "ROM", "ADDER8"].includes(component.kind)) {
-        const number = (bits: Signal[]) =>
-          bits.some((bit) => bit === "X" || bit === "Z")
-            ? null
-            : bits.reduce<number>((n, b, i) => n + (b === 1 ? 2 ** i : 0), 0);
-        if (component.kind === "ADDER8") {
-          const a = number(ports.slice(0, 8)), b = number(ports.slice(8, 16));
-          outputValues[id] = a === null || b === null || ports[16] === "X"
-            ? Array<Signal>(9).fill("X")
-            : Array.from(
-              { length: 9 },
-              (_, i) => (a + b + (ports[16] === 1 ? 1 : 0)) >> i & 1,
-            ) as Signal[];
-        } else {
-          const address = number(ports.slice(0, 8));
-          outputValues[id] = address === null
-            ? Array<Signal>(8).fill("X")
-            : component.kind === "RAM"
-            ? memory.ram![id].slice(address * 8, address * 8 + 8)
-            : Array.from({ length: 8 }, (_, i) =>
-              (component.contents?.[address] ?? 0) >> i & 1) as Signal[];
-        }
-        value = outputValues[id][0];
-      } else if (component.kind === "CUSTOM") {
+      if (component.kind === "CUSTOM") {
         const def = definitionOf(component, circuit);
         if (!def) value = "X";
         else {
@@ -705,159 +664,104 @@ export function simulate(
     );
     return result;
   }
-  const before = settleElectrical();
-  for (const c of circuit.components) {
-    if (c.kind === "DFF") {
-      const [data, clock] = before.inputs[c.id];
-      if (previous.clock[c.id] === 0 && clock === 1) memory.q[c.id] = data;
-      memory.clock[c.id] = clock;
-    }
-  }
-  for (const c of circuit.components) {
-    const ports = before.inputs[c.id];
-    if (["REGISTER8", "COUNTER8"].includes(c.kind)) {
-      const offset = c.kind === "REGISTER8" ? 8 : 0;
-      const [clock, enable, clear] = ports.slice(offset);
-      if (clear === 1) memory.bytes![c.id] = Array<Signal>(8).fill(0);
-      else if (previous.clock[c.id] === 0 && clock === 1 && enable === 1) {
-        if (c.kind === "REGISTER8") memory.bytes![c.id] = ports.slice(0, 8);
-        else {
-          const bits = memory.bytes![c.id];
-          const value = bits.some((bit) => bit === "X" || bit === "Z")
-            ? null
-            : bits.reduce<number>((n, b, i) => n + (b === 1 ? 2 ** i : 0), 0) +
-              1;
-          memory.bytes![c.id] = value === null
-            ? Array<Signal>(8).fill("X")
-            : Array.from({ length: 8 }, (_, i) => value >> i & 1) as Signal[];
-        }
+  let settled = settleElectrical();
+  for (let pass = 0; pass < 12; pass++) {
+    let changed = false;
+    for (const [id, model] of models) {
+      const c = components.get(id)!;
+      let ports = settled.inputs[id] ?? [];
+      if (c.kind === "KEYBOARD" || c.kind === "BUS_KEYBOARD") {
+        const key = keyboards[id] ?? { code: 0, pressed: false };
+        ports = ports.concat(bitsOf(key.code, 8), key.pressed ? 1 : 0);
       }
-      memory.clock[c.id] = clock;
-    }
-    if (c.kind === "RAM") {
       if (
-        previous.clock[c.id] === 0 && ports[17] === 1 && ports[16] === 1 &&
-        !ports.slice(0, 8).some((bit) => bit === "X" || bit === "Z")
+        c.kind === "VGA" && ports[13] === 1 &&
+        ports.slice(0, 13).some((bit) => bit === "X" || bit === "Z")
       ) {
-        const address = ports.slice(0, 8).reduce<number>(
-          (n, b, i) => n + (b === 1 ? 2 ** i : 0),
-          0,
-        );
-        memory.ram![c.id].splice(address * 8, 8, ...ports.slice(8, 16));
-      }
-      memory.clock[c.id] = ports[17];
-    }
-  }
-  const after = settleElectrical();
-  for (const c of circuit.components) {
-    if (c.kind !== "VGA") continue;
-    const ports = after.inputs[c.id];
-    const pixels = [
-      ...(previous.screens?.[c.id] ??
-        Array<number>(screenWidth * screenHeight).fill(0)),
-    ];
-    if (ports[14] === 1) pixels.fill(0);
-    else if (previous.writes?.[c.id] === 0 && ports[13] === 1) {
-      if (ports.slice(0, 13).some((bit) => bit === "X" || bit === "Z")) {
         warnings.add(
           `${c.label}: pixel write needs known coordinates and RGB inputs.`,
         );
-      } else {
-        const bits = (start: number, count: number) =>
-          ports.slice(start, start + count).reduce<number>(
-            (n, bit, i) => n + (bit === 1 ? 2 ** i : 0),
-            0,
-          );
-        const x = bits(0, 5), y = bits(5, 5);
-        if (y < screenHeight) {
-          pixels[y * screenWidth + x] = (ports[10] === 1 ? 4 : 0) +
-            (ports[11] === 1 ? 2 : 0) + (ports[12] === 1 ? 1 : 0);
+        continue;
+      }
+      if (model.clockInputs.some((i) => ports[i] === "X" || ports[i] === "Z")) {
+        warnings.add(`${c.label}: clock or write strobe is floating.`);
+        continue;
+      }
+      const engine = engineFor(model), old = memory.gates![id];
+      const previousOutputs = engine.outputs(old);
+      if (
+        ports.length === old.inputs.length &&
+        ports.every((p, i) => p === old.inputs[i])
+      ) continue;
+      try {
+        const next = engine.evaluate(ports, old);
+        memory.gates![id] = next;
+        if (engine.outputs(next).some((bit, i) => bit !== previousOutputs[i])) {
+          changed = true;
         }
+      } catch (error) {
+        warnings.add(`${c.label}: ${(error as Error).message}`);
       }
     }
-    memory.screens![c.id] = pixels;
-    memory.writes![c.id] = ports[13];
+    settled = settleElectrical();
+    if (!changed) break;
+    if (pass === 11) warnings.add("Gate device connections did not settle.");
   }
-  for (const c of circuit.components) {
-    if (c.kind !== "BUS_CPU") continue;
-    const ports = after.inputs[c.id], state = memory.processors![c.id];
-    if (ports[19] === 1) memory.processors![c.id] = initialProcessor();
-    else if (previous.clock[c.id] === 0 && ports[18] === 1) {
-      const bus = (address: number, value?: number) => {
-        state.signals.splice(0, 16, ...bitsOf(address, 16));
-        state.signals.splice(16, 8, ...bitsOf(value ?? 0, 8));
-        state.signals[24] = value === undefined ? 0 : 1;
-        state.signals[25] = value === undefined ? 1 : 0;
-        const current = settle();
-        if (value !== undefined) {
-          for (const device of circuit.components) {
-            if (
-              !["BUS_RAM", "BUS_SCREEN", "BUS_TERMINAL"].includes(device.kind)
-            ) continue;
-            const input = current.inputs[device.id];
-            if (input[24] !== 1) continue;
-            const at = numberOf(input.slice(0, 16)),
-              data = numberOf(input.slice(16, 24));
-            if (at === null || data === null) {
-              throw Error(`${device.label}: floating address or data.`);
-            }
-            if (device.kind === "BUS_RAM" && at >= 0x2000 && at < 0xf000) {
-              memory.busRAM![device.id][at] = data;
-            }
-            if (device.kind === "BUS_SCREEN") {
-              if (at >= 0xf000 && at < 0xf300) {
-                memory.screens![device.id][at - 0xf000] = data & 7;
-              }
-              if (at === 0xff02 && data) memory.screens![device.id].fill(0);
-            }
-            if (device.kind === "BUS_TERMINAL" && at === 0xff03) {
-              memory.terminals![device.id] =
-                ((memory.terminals![device.id] ?? "") +
-                  String.fromCharCode(data)).slice(-4096);
-            }
-          }
-          state.signals[24] = 0;
-          return 0;
-        }
-        const byte = numberOf(current.inputs[c.id].slice(0, 8));
-        if (byte === null) {
-          throw Error(
-            "CPU data bus is floating. Check memory and device wires.",
-          );
-        }
-        return byte;
-      };
-      const alu = (
-        operation: import("./alu.ts").ALUOperation,
-        a: number,
-        b: number,
-      ) => {
-        state.signals.splice(26, 8, ...bitsOf(a, 8));
-        state.signals.splice(34, 8, ...bitsOf(b, 8));
-        state.signals.splice(
-          42,
-          3,
-          ...bitsOf(
-            ["ADD", "SUB", "AND", "OR", "XOR", "SHL", "SHR"].indexOf(operation),
-            3,
+  for (const [id, model] of models) {
+    const c = components.get(id)!,
+      state = memory.gates![id],
+      engine = engineFor(model),
+      out = engine.outputs(state);
+    if (c.kind === "DFF") memory.q[id] = out[0];
+    if (c.kind === "REGISTER8" || c.kind === "COUNTER8") {
+      memory.bytes![id] = out;
+    }
+    if (c.kind === "BUS_CPU") {
+      memory.processors![id] = processorSnapshot(model, state);
+      if (memory.processors![id].error) {
+        warnings.add(`${c.label}: ${memory.processors![id].error}`);
+      }
+    }
+    if (c.kind === "HEX_DISPLAY" || c.kind === "SEVEN_SEG") {
+      memory.displays![id] = out;
+    }
+    if (c.kind === "RAM") {
+      const bits = Array<Signal>(2048).fill(0);
+      for (const [address, value] of storedWords(model, state)) {
+        bits.splice(address * 8, 8, ...value);
+      }
+      memory.ram![id] = bits;
+    }
+    if (c.kind === "BUS_RAM") {
+      memory.busRAM![id] = Object.fromEntries(
+        [...storedWords(model, state)].map((
+          [address, value],
+        ) => [address, gateNumber(value) ?? 0]),
+      );
+    }
+    if (c.kind === "BUS_SCREEN" || c.kind === "VGA") {
+      const image = Array<number>(768).fill(0);
+      for (const [address, value] of storedWords(model, state)) {
+        if (address < 768) image[address] = gateNumber(value) ?? 0;
+      }
+      memory.screens![id] = image;
+    }
+    if (c.kind === "BUS_TERMINAL") {
+      const count = (gateNumber(engine.probe(state, "Count")) ?? 0) +
+          (gateNumber(engine.probe(state, "Write")) ?? 0),
+        words = storedWords(model, state),
+        length = Math.min(count, 4096),
+        start = Math.max(0, count - 4096);
+      memory.terminals![id] = Array.from(
+        { length },
+        (_, i) =>
+          String.fromCharCode(
+            gateNumber(words.get((start + i) % 4096) ?? []) ?? 0,
           ),
-        );
-        const result = settle().inputs[c.id];
-        const value = numberOf(result.slice(8, 16));
-        if (
-          value === null ||
-          [result[16], result[17]].some((v) => v === "X" || v === "Z")
-        ) throw Error("CPU ALU inputs are floating. Check ALU wires.");
-        return { value, carry: result[16] === 1, zero: result[17] === 1 };
-      };
-      memory.processors![c.id] = runProcessor(state, bus, alu);
-    }
-    memory.clock[c.id] = ports[18];
-    if (memory.processors![c.id].error) {
-      warnings.add(`${c.label}: ${memory.processors![c.id].error}`);
+      ).join("");
     }
   }
-  return { ...settleElectrical(), memory, warnings: [...warnings] };
+  return { ...settled, memory, warnings: [...warnings] };
 }
 const validId = (id: unknown): id is string =>
   typeof id === "string" && /^[a-zA-Z0-9_-]{1,80}$/.test(id) &&
@@ -874,7 +778,7 @@ export function connect(
     !validId(id) || circuit.components.some((c) => c.id === id) ||
     circuit.wires.some((w) => w.id === id)
   ) throw Error("Connection ID must be valid and unique.");
-  if (circuit.wires.length >= 2000) throw Error("Limit: 2,000 wires.");
+  if (circuit.wires.length >= 50_000) throw Error("Limit: 50,000 wires.");
   const source = circuit.components.find((c) => c.id === from),
     target = circuit.components.find((c) => c.id === to);
   if (
@@ -897,13 +801,13 @@ export function connect(
   };
 }
 export function parseCircuit(text: string): Circuit {
-  if (text.length > 2_000_000) {
+  if (text.length > 20_000_000) {
     throw Error("Circuit file is too large (2 MB maximum).");
   }
   const data = JSON.parse(text);
   if (
     data?.definitions !== undefined &&
-    (!Array.isArray(data.definitions) || data.definitions.length > 100)
+    (!Array.isArray(data.definitions) || data.definitions.length > 2000)
   ) throw Error("Invalid component library (100 definitions maximum).");
   const definitions: Definition[] = (data?.definitions ?? []).map(
     (d: Definition) => {
@@ -917,6 +821,7 @@ export function parseCircuit(text: string): Circuit {
       return {
         id: d.id,
         name: d.name,
+        ...(d.internal === true ? { internal: true } : {}),
         ...(d.description !== undefined ? { description: d.description } : {}),
         color: d.color,
         shape: d.shape,
@@ -933,8 +838,8 @@ export function parseCircuit(text: string): Circuit {
       c?.version !== 1 || typeof c.name !== "string" || c.name.length > 100 ||
       !Array.isArray(c.components) || !Array.isArray(c.wires)
     ) throw Error("Not a supported circuit file.");
-    if (c.components.length > 2000 || c.wires.length > 2000) {
-      throw Error("Limit: 2,000 components and 2,000 wires.");
+    if (c.components.length > 20_000 || c.wires.length > 50_000) {
+      throw Error("Limit: 20,000 components and 50,000 wires.");
     }
     const context = { ...c, definitions },
       ids = new Set<string>(),
@@ -978,6 +883,7 @@ export function parseCircuit(text: string): Circuit {
       return {
         id: n.id,
         kind: n.kind,
+        ...(n.clockInput === true ? { clockInput: true } : {}),
         x: n.x,
         y: n.y,
         label: n.label,
@@ -1020,14 +926,8 @@ export function parseCircuit(text: string): Circuit {
       d.components.some((n) =>
         [
           "CLOCK",
-          "DFF",
           "VGA",
           "KEYBOARD",
-          "REGISTER8",
-          "COUNTER8",
-          "RAM",
-          "BUS_CPU",
-          "BUS_RAM",
           "BUS_SCREEN",
           "BUS_KEYBOARD",
           "BUS_TERMINAL",
@@ -1036,7 +936,7 @@ export function parseCircuit(text: string): Circuit {
       )
     ) {
       throw Error(
-        "Custom components support combinational gates and CMOS switches; behavioral state and interactive devices must stay outside.",
+        "Keep clock sources, keyboard inputs, and physical displays outside custom components.",
       );
     }
     const normalized = validate({
@@ -1051,21 +951,33 @@ export function parseCircuit(text: string): Circuit {
       throw Error("A custom component needs at least one Output block.");
     }
   }
+  const sizes = new Map<string, { size: number; height: number }>();
   function check(id: string, path: Set<string>, depth: number): number {
-    if (path.has(id) || depth > 12) {
+    if (path.has(id) || depth > 48) {
       throw Error(
         "Recursive or excessively nested custom components are not supported.",
       );
     }
+    const cached = sizes.get(id);
+    if (cached) {
+      if (depth + cached.height > 48) {
+        throw Error("Excessively nested custom components.");
+      }
+      return cached.size;
+    }
     const d = definitions.find((d) => d.id === id)!;
     const next = new Set([...path, id]);
-    let size = d.components.length;
+    let size = d.components.length, height = 0;
     for (const n of d.components) {
-      if (n.kind === "CUSTOM") size += check(n.definition!, next, depth + 1);
+      if (n.kind === "CUSTOM") {
+        size += check(n.definition!, next, depth + 1);
+        height = Math.max(height, 1 + sizes.get(n.definition!)!.height);
+      }
     }
-    if (size > 2000) {
-      throw Error("Custom components exceed 2,000 expanded components.");
+    if (size > 100_000_000) {
+      throw Error("Custom components exceed 100 million expanded parts.");
     }
+    sizes.set(id, { size, height });
     return size;
   }
   definitions.forEach((d) => check(d.id, new Set(), 0));
@@ -1074,8 +986,8 @@ export function parseCircuit(text: string): Circuit {
   for (const n of result.components) {
     if (n.kind === "CUSTOM") expanded += check(n.definition!, new Set(), 0);
   }
-  if (expanded > 5000) {
-    throw Error("Circuit exceeds 5,000 expanded components.");
+  if (expanded > 200_000_000) {
+    throw Error("Circuit exceeds 200 million expanded parts.");
   }
   return { ...result, ...(definitions.length ? { definitions } : {}) };
 }
@@ -1099,13 +1011,13 @@ export function truthTable(circuit: Circuit) {
       [
         "CLOCK",
         "DFF",
-        "VGA",
-        "KEYBOARD",
         "REGISTER8",
         "COUNTER8",
         "RAM",
         "BUS_CPU",
         "BUS_RAM",
+        "VGA",
+        "KEYBOARD",
         "BUS_SCREEN",
         "BUS_KEYBOARD",
         "BUS_TERMINAL",
@@ -1157,14 +1069,8 @@ export function createDefinition(
     components.some((c) =>
       [
         "CLOCK",
-        "DFF",
         "VGA",
         "KEYBOARD",
-        "REGISTER8",
-        "COUNTER8",
-        "RAM",
-        "BUS_CPU",
-        "BUS_RAM",
         "BUS_SCREEN",
         "BUS_KEYBOARD",
         "BUS_TERMINAL",
@@ -1173,7 +1079,7 @@ export function createDefinition(
     )
   ) {
     throw Error(
-      "Custom components support combinational gates and CMOS switches. Keep behavioral state and interactive devices outside the selection.",
+      "Keep clock sources, keyboard inputs, and physical displays outside the selection.",
     );
   }
   const wires = structuredClone(
@@ -1263,3 +1169,12 @@ export * from "./karnaugh.ts";
 
 export * from "./wired-computer.ts";
 export * from "./transistors.ts";
+
+export * from "./gate-inspect.ts";
+export * from "./gate-netlist.ts";
+
+export * from "./gate-control.ts";
+
+export { GateComputer } from "./gate-computer.ts";
+
+export { inspectCustomCircuit } from "./gate-circuit.ts";

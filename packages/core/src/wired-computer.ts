@@ -1,5 +1,4 @@
-import { Computer } from "./computer.ts";
-import { type ALUOperation, completeALUCircuit } from "./alu.ts";
+import { completeALUCircuit } from "./alu.ts";
 import { assemble } from "./computer.ts";
 import { snakeGame } from "./snake.ts";
 import type { Circuit, Signal } from "./index.ts";
@@ -14,6 +13,7 @@ export interface ProcessorState {
   error: string;
   cycles: number;
   signals: Signal[];
+  phase?: number;
 }
 export const initialProcessor = (): ProcessorState => ({
   registers: Array(8).fill(0),
@@ -32,54 +32,6 @@ export const numberOf = (bits: Signal[]) =>
   bits.includes("X")
     ? null
     : bits.reduce<number>((n, bit, i) => n | (Number(bit) << i), 0);
-export function runProcessor(
-  state: ProcessorState,
-  bus: (address: number, value?: number) => number,
-  alu: (
-    operation: ALUOperation,
-    a: number,
-    b: number,
-  ) => { value: number; carry: boolean; zero: boolean },
-) {
-  class WiredCPU extends Computer {
-    override read(address: number) {
-      return bus(address);
-    }
-    override write(address: number, value: number) {
-      bus(address, value & 255);
-    }
-  }
-  const cpu = new WiredCPU(new Uint8Array());
-  cpu.registers.set(state.registers);
-  for (
-    const key of [
-      "pc",
-      "sp",
-      "zero",
-      "carry",
-      "halted",
-      "error",
-      "cycles",
-    ] as const
-  ) Object.assign(cpu, { [key]: state[key] });
-  cpu.evaluate = (operation, a, b) => ({
-    ...alu(operation, a, b),
-    values: new Uint8Array(),
-  });
-  cpu.step();
-  return {
-    ...state,
-    registers: [...cpu.registers],
-    pc: cpu.pc,
-    sp: cpu.sp,
-    zero: cpu.zero,
-    carry: cpu.carry,
-    halted: cpu.halted,
-    error: cpu.error,
-    cycles: cpu.cycles,
-  };
-}
-
 export function computerCircuit(source = snakeGame): Circuit {
   const alu = completeALUCircuit();
   const circuit: Circuit = {

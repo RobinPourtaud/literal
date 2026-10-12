@@ -2,6 +2,8 @@ import {
   type Circuit,
   type Component,
   definitionOf,
+  inspectCustomCircuit,
+  inspectHardware,
   simulate,
   type Simulation,
   transistorCircuit,
@@ -12,6 +14,10 @@ export function inspectCircuit(
   parent: Circuit,
   state: Simulation,
 ) {
+  const hardware = inspectHardware(node, parent, state);
+  if (hardware) return hardware;
+  const custom = inspectCustomCircuit(node, parent, state);
+  if (custom) return custom;
   const definition = definitionOf(node, parent);
   const circuit = definition
     ? {

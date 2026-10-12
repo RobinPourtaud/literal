@@ -31,9 +31,10 @@ runs. All circuit execution and storage happen locally in the browser.
 - Keyboard controls and reduced-motion support. The compact sage interface
   follows ISETL Web.
 
-Literal uses single-bit wires. Custom components currently support combinational
-logic. Buses, sequential custom components, asynchronous latch simulation, and
-Logisim `.circ` import are not implemented.
+Literal uses single-bit wires. Custom components can contain combinational
+logic, feedback latches, registers, counters, RAM, and nested circuits. Physical
+clocks, keyboards, and displays stay outside reusable definitions. Logisim
+`.circ` import is not implemented.
 
 ## Run locally
 
@@ -90,8 +91,8 @@ shape.
 
 Definitions are snapshots of the selected logic. Custom components can contain
 other custom components and have multiple outputs. Their pins are ordered by the
-Input and Output blocks in the definition. Stateful and interactive devices must
-remain outside custom components.
+Input and Output blocks in the definition. Storage components are supported;
+physical clocks, keyboards, and displays remain outside custom components.
 
 The library is saved in this browser. Circuit downloads embed the definitions
 they carry; opening a circuit adds its definitions to the library. Keep a
@@ -134,9 +135,11 @@ restart. See [the machine and instruction reference](docs/computer.md).
 **See inside** opens reusable components recursively. Logic gates expose CMOS
 switch networks, and transistors expose their terminals and structure. The ALU
 is the actual simulated gate circuit: changing its wires changes CPU results.
-Instruction control, registers, and memory remain behavioral models. Transistors
-use digital switch semantics, including high impedance and conflicting drivers;
-this is not an analog electrical simulator or a PC BIOS emulator.
+Instruction control, registers, address decoding, and memory use NAND gate
+networks. Each instruction takes eight clock cycles; HALT stops during its
+execute phase. Transistors use digital switch semantics, including high
+impedance and conflicting drivers; this is not an analog electrical simulator or
+a PC BIOS emulator.
 
 Choose **Discover** to start with power, ground, transistors, and junctions. The
 tutorial stays above the canvas; **Hint** opens a short explanation. Each course
@@ -164,11 +167,11 @@ editing it preserves the achievement and lets you recheck the current circuit.
 Relevant devices become available as their courses introduce them. **Karnaugh**
 is available from XOR onward to explore Boolean expressions.
 
-The latch lab exposes both CMOS networks because feedback across separate custom
-gates is not supported. Clocked flip-flops, RAM, ROM, the CPU controller, and
-peripherals are behavioral devices. The computer's ALU is a gate network; **See
-inside** inspects it recursively. The projection lesson uses CPU arithmetic and
-pixel writes; it does not implement a GPU or a complete transistor CPU.
+The latch lab exposes its CMOS feedback network. Flip-flops, registers,
+counters, RAM, ROM decoders, CPU control, and peripheral addressing run as gate
+networks. **See inside** follows the actual hierarchy through storage cells and
+NAND gates to digital CMOS switches. The projection lesson draws with CPU
+instructions.
 
 ![Discover course path](docs/discover-courses.png)
 
@@ -274,3 +277,30 @@ The custom-component dialog previews the selected parts and all external pin
 names before saving. A selected Power block stays internal and does not become
 an input pin. Gate courses provide **Save this gate**, which selects the
 complete working network and leaves the external controls out automatically.
+
+## Gate runtime
+
+Every computational component runs a circuit of NAND gates, wires, and feedback:
+CPU control, registers, counters, adders, memory, address decoders, and display
+decoders. Memory is a tree of clock selectors and storage cells. The simulator
+elaborates active paths lazily; it does not replace cells with byte writes. ROM
+contents become constant gates and multiplexers. Keyboard events and clock
+timing enter as physical signals; pixel and text drawing read gate-state
+snapshots.
+
+The CPU takes eight clock cycles per instruction. **See inside** displays the
+actual live hierarchy, including storage cells, and exported circuits execute
+through the same generic gate engine. Large circuits run slower than instruction
+interpreters. The old interpreter lives only in `tests/reference-computer.ts` as
+a comparison oracle; it is not included in the application.
+
+![CPU register feedback gates](docs/gate-internals.png)
+
+## Deployment
+
+`deno task deploy-check` builds and validates the static Cloudflare
+configuration. `deno task deploy` publishes the build to `literal.pourtaud.dev`
+using the current Wrangler login. No application server or backend storage is
+required. Browser verification scripts accept an isolated localhost Orca page id
+as their last argument; they refuse the regular preview origin to protect saved
+work.

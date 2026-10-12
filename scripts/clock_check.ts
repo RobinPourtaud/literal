@@ -1,8 +1,12 @@
 import assert from "node:assert/strict";
 const worktree = new URL("..", import.meta.url).pathname.replace(/\/$/, "");
+const page = Deno.args.at(-1);
+if (!page || !/^[0-9a-f-]{36}$/.test(page)) {
+  throw Error("Pass an Orca page id on the isolated localhost origin.");
+}
 async function orca(...args: string[]) {
   const result = await new Deno.Command("orca", {
-    args: [...args, "--worktree", `path:${worktree}`, "--json"],
+    args: [...args, "--page", page, "--worktree", `path:${worktree}`, "--json"],
     stdout: "piped",
     stderr: "piped",
   }).output();
@@ -24,6 +28,7 @@ async function run(code: string) {
     return value.result;
   }
 }
+assert.equal(await run(`location.hostname`), "localhost");
 const previous = await run(
   `JSON.stringify(Object.fromEntries(Object.entries(localStorage).filter(([key])=>key.startsWith('literal.'))))`,
 );

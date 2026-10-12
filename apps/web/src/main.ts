@@ -1,3 +1,4 @@
+import { checkLabAsync } from "./lab-check.ts";
 import { insideBounds, inspectCircuit } from "./inside.ts";
 import { componentHelp, descriptions } from "./component-info.ts";
 import { courses, courseState } from "./discover.ts";
@@ -31,10 +32,12 @@ import {
   type Kind,
   type Memory,
   parseCircuit,
+  programGateMemory,
   screenColors,
   screenWidth,
   simulate,
   type Simulation,
+  stepGateInstruction,
   transistorCircuit,
   truthTable,
   virtualKeys,
@@ -670,12 +673,14 @@ function renderPreview() {
   }
 }
 function render() {
-  $("#custom-items").innerHTML = library.filter((d) =>
-    mode !== "discover" || discovered.has(d.id) ||
-    (d.id === "literal-alu8" &&
-      ((!freeBuild &&
-        courseIndex >= courses.findIndex((c) => c.id === "cpu")) ||
-        completedCourses.has("cpu")))
+  $("#custom-items").innerHTML = library.filter((
+    d,
+  ) =>
+    !d.internal && (mode !== "discover" || discovered.has(d.id) ||
+      (d.id === "literal-alu8" &&
+        ((!freeBuild &&
+          courseIndex >= courses.findIndex((c) => c.id === "cpu")) ||
+          completedCourses.has("cpu"))))
   ).map((d) =>
     `<div class="custom-library-row"><button class="palette-item ${
       placementDefinition === d.id && placement === "CUSTOM" ? "active" : ""
@@ -883,7 +888,9 @@ function renderDetails() {
           memory.processors?.[c.id]?.registers.map((v, i) =>
             `R${i} ${v.toString(16).padStart(2, "0")}`
           ).join("  ")
-        }\n${esc(memory.processors?.[c.id]?.error ?? "")}</pre>`
+        }\nPhase ${(memory.processors?.[c.id]?.phase ?? 0) + 1}/8 · ${
+          memory.processors?.[c.id]?.cycles ?? 0
+        } instructions\n${esc(memory.processors?.[c.id]?.error ?? "")}</pre>`
         : ""
     }${
       c.kind === "BUS_RAM" || c.kind === "RAM"
@@ -1162,10 +1169,10 @@ function copySelection() {
 function pasteSelection() {
   if (!clipboard) return;
   if (
-    circuit.components.length + clipboard.components.length > 500 ||
-    circuit.wires.length + clipboard.wires.length > 2000
+    circuit.components.length + clipboard.components.length > 20_000 ||
+    circuit.wires.length + clipboard.wires.length > 50_000
   ) {
-    notify("Limit: 500 components and 2,000 wires.");
+    notify("Limit: 20,000 components and 50,000 wires.");
     return;
   }
   mutate(() => {
@@ -1360,8 +1367,7 @@ $("#app").addEventListener("click", (e) => {
       renderDiscover();
       const course = courses[courseIndex];
       const snapshot = clone(circuit);
-      setTimeout(() => {
-        const report = checkLab(course.id, snapshot);
+      checkLabAsync(course.id, snapshot).then((report) => {
         checkingLab = false;
         if (
           courses[courseIndex].id !== course.id ||
@@ -1380,7 +1386,7 @@ $("#app").addEventListener("click", (e) => {
           );
         }
         render();
-      }, 30);
+      });
       return;
     }
     if (b.dataset.lesson === "example") {
@@ -1606,7 +1612,7 @@ $("#app").addEventListener("click", (e) => {
     help: () =>
       dialog(
         "Reference",
-        `<h3>Draw a circuit</h3><p>Pick a component from the library, then click the canvas. Esc returns to selection. Components snap to the 20 px grid.</p><p>Click two pins to connect them: one output and one input. Outputs can drive several inputs. Each input accepts one wire. A wire crossing is visual; it does not join the wires.</p><h3>Simulate</h3><p>Click an input block to switch between 0 and 1. Signals propagate immediately. Select a Clock to step it, run it, or change its frequency. Each clock runs independently. D flip-flops sample on a rising edge and start at 0. Reset clears stored state, RAM, and screens and resets clocks to 0.</p><p>X means an unconnected or unknown signal. Feedback between ideal logic gates is reported. CMOS transistor networks can hold latch state; flip-flops capture data on clock edges. Wires carry single bits; byte devices have individual bit pins. Logisim .circ files are not supported.</p><h3>Displays</h3><p>LED lights on 1. The 7-segment display has eight independent pins: a at the top, b upper right, c lower right, d bottom, e lower left, f upper left, g middle, and dp for the decimal point. The hex display decodes four bits, with weights 1, 2, 4, 8 from top to bottom. Amber segments mean unknown inputs. Truth tables export each display input as a separate column.</p><h3>Byte devices</h3><p>Registers capture eight data bits on a rising Clock when Enable is high. Counters increment on that edge. Clear resets either immediately. RAM stores 256 bytes: eight address bits, eight data bits, Write, and Clock. Read is asynchronous; write needs Write high on a rising Clock. ROM bytes are edited as hex in the inspector. ADDER8 accepts two bytes and carry, and produces a sum and carry.</p><h3>Screen and keyboard</h3><p>VGA stores 32 × 24 RGB pixels. Connect X0–4, Y0–4 and RGB, then pulse Write. Clear resets the screen. Select Keyboard for physical-key capture, remapping, or virtual keys. It exposes eight uppercase ASCII bits and Pressed. Escape releases capture.</p><h3>Tools</h3><p>The wired computer examples run Literal 8 assembly on the circuit canvas. ROM, RAM, keyboard, screen, and a gate ALU connect to the CPU controller through bit wires. Discover guides you from transistors to this machine, programs, a game, and 3D projection. Karnaugh simplifies 1–4 variable combinational outputs using editable Gray-order maps and don't-care cells.</p><h3>Custom components</h3><p>Select logic and choose Create component. Input/Output labels name pins; boundary connections become pins. Choose a name, color and shape. The pencil in the library edits appearance. Stateful and interactive devices stay outside custom components.</p><h3>Files and keyboard</h3><p>The current circuit is saved in this browser. Save downloads a .literal JSON file. Open imports a saved circuit. Simulation memory is reset when opening, undoing, or reloading.</p><p>⌘/Ctrl+Z undo · Shift+⌘/Ctrl+Z redo · ⌘/Ctrl+C/V copy/paste · ⌘/Ctrl+D duplicate · ⌘/Ctrl+S save · ⌘/Ctrl+O open · Delete removes selection · V select · H pan · F fit · Esc cancel. Arrow keys move selected components by one grid step; Shift moves five steps.</p><p>Keyboard users can select components and pins with Tab, then press Enter. To place without a pointer, use the Place at center button after choosing a component.</p>`,
+        `<h3>Draw a circuit</h3><p>Pick a component from the library, then click the canvas. Esc returns to selection. Components snap to the 20 px grid.</p><p>Click two pins to connect them: one output and one input. Outputs can drive several inputs. Each input accepts one wire. A wire crossing is visual; it does not join the wires.</p><h3>Simulate</h3><p>Click an input block to switch between 0 and 1. Signals propagate immediately. Select a Clock to step it, run it, or change its frequency. Each clock runs independently. D flip-flops sample on a rising edge and start at 0. Reset clears stored state, RAM, and screens and resets clocks to 0.</p><p>X means an unconnected or unknown signal. Feedback between ideal logic gates is reported. CMOS transistor networks can hold latch state; flip-flops capture data on clock edges. Wires carry single bits; byte devices have individual bit pins. Logisim .circ files are not supported.</p><h3>Displays</h3><p>LED lights on 1. The 7-segment display has eight independent pins: a at the top, b upper right, c lower right, d bottom, e lower left, f upper left, g middle, and dp for the decimal point. The hex display decodes four bits, with weights 1, 2, 4, 8 from top to bottom. Amber segments mean unknown inputs. Truth tables export each display input as a separate column.</p><h3>Byte devices</h3><p>Registers capture eight data bits on a rising Clock when Enable is high. Counters increment on that edge. Clear resets either immediately. RAM stores 256 bytes: eight address bits, eight data bits, Write, and Clock. Read is asynchronous; write needs Write high on a rising Clock. ROM bytes are edited as hex in the inspector. ADDER8 accepts two bytes and carry, and produces a sum and carry.</p><h3>Screen and keyboard</h3><p>VGA stores 32 × 24 RGB pixels. Connect X0–4, Y0–4 and RGB, then pulse Write. Clear resets the screen. Select Keyboard for physical-key capture, remapping, or virtual keys. It exposes eight uppercase ASCII bits and Pressed. Escape releases capture.</p><h3>Tools</h3><p>The wired computer examples run Literal 8 assembly on the circuit canvas. ROM, RAM, keyboard, screen, and a gate ALU connect to the CPU controller through bit wires. Discover guides you from transistors to this machine, programs, a game, and 3D projection. Karnaugh simplifies 1–4 variable combinational outputs using editable Gray-order maps and don't-care cells.</p><h3>Custom components</h3><p>Select logic and choose Create component. Input/Output labels name pins; boundary connections become pins. Choose a name, color and shape. The pencil in the library edits appearance. Registers and RAM can be saved. Physical clocks, keyboards, and displays stay outside custom components.</p><h3>Files and keyboard</h3><p>The current circuit is saved in this browser. Save downloads a .literal JSON file. Open imports a saved circuit. Simulation memory is reset when opening, undoing, or reloading.</p><p>⌘/Ctrl+Z undo · Shift+⌘/Ctrl+Z redo · ⌘/Ctrl+C/V copy/paste · ⌘/Ctrl+D duplicate · ⌘/Ctrl+S save · ⌘/Ctrl+O open · Delete removes selection · V select · H pan · F fit · Esc cancel. Arrow keys move selected components by one grid step; Shift moves five steps.</p><p>Keyboard users can select components and pins with Tab, then press Enter. To place without a pointer, use the Place at center button after choosing a component.</p>`,
       ),
   };
   actions[b.id]?.();
@@ -1669,7 +1675,7 @@ $("#file-input").addEventListener("change", async (e) => {
   const input = e.target as HTMLInputElement, file = input.files?.[0];
   if (!file) return;
   try {
-    if (file.size > 2_000_000) throw Error("Circuit file exceeds 2 MB.");
+    if (file.size > 20_000_000) throw Error("Circuit file exceeds 20 MB.");
     load(parseCircuit(await file.text()));
     notify(`Opened ${circuit.name}`);
   } catch (error) {
@@ -1718,7 +1724,7 @@ $("#dialog-body").addEventListener("submit", (e) => {
   render();
 });
 function customDialog() {
-  if (library.length >= 100) {
+  if (library.filter((d) => !d.internal).length >= 100) {
     notify("Library limit: 100 custom components.");
     return;
   }
@@ -1755,7 +1761,7 @@ function customDialog() {
     "Create component",
     `<form id="custom-form">${preview}<p class="muted">Save the selected circuit to your library. Input and Output labels become pin names. Unconnected pins and connections crossing the selection become pins automatically.</p><label class="field">Component name<input id="custom-name" maxlength="80" required value="${
       esc(circuit.name.slice(0, 80))
-    }"></label><label class="field">Description<textarea id="custom-description" maxlength="600" rows="3" placeholder="What this component does and how to use its pins"></textarea></label><label class="field">Color<input id="custom-color" type="color" value="#527d3c"></label><label class="field">Shape<select id="custom-shape"><option value="rounded">Rounded rectangle</option><option value="rectangle">Rectangle</option><option value="diamond">Diamond</option></select></label><p class="muted">Save gate and transistor networks. Keep behavioral memory and interactive devices outside the selection.</p><p id="custom-error" role="alert">${
+    }"></label><label class="field">Description<textarea id="custom-description" maxlength="600" rows="3" placeholder="What this component does and how to use its pins"></textarea></label><label class="field">Color<input id="custom-color" type="color" value="#527d3c"></label><label class="field">Shape<select id="custom-shape"><option value="rounded">Rounded rectangle</option><option value="rectangle">Rectangle</option><option value="diamond">Diamond</option></select></label><p class="muted">Save gate and transistor networks. Registers and RAM can be saved too. Keep physical clocks, keyboards, and displays outside the selection.</p><p id="custom-error" role="alert">${
       esc(previewError)
     }</p><button class="primary" type="submit" ${
       previewError ? "disabled" : ""
@@ -1796,8 +1802,8 @@ $("#dialog-body").addEventListener("submit", (e) => {
 });
 function place(p: Point) {
   if (!placement) return;
-  if (circuit.components.length >= 500) {
-    notify("Limit: 500 components.");
+  if (circuit.components.length >= 20_000) {
+    notify("Limit: 20,000 components.");
     return;
   }
   mutate(() => {
@@ -2154,7 +2160,7 @@ window.literal = createAgentAPI({
   },
   truthTable: () => truthTable(circuit),
   createComponent: (ids, options) => {
-    if (library.length >= 100) {
+    if (library.filter((d) => !d.internal).length >= 100) {
       throw Error("Library limit: 100 custom components.");
     }
     if (
@@ -2187,24 +2193,36 @@ window.literal = createAgentAPI({
   computer: circuitComputerAPI,
 });
 
-function advanceComputer(steps: number) {
+async function advanceComputer(steps: number) {
+  const active = circuit;
+  let yielded = performance.now(), painted = yielded;
   for (let i = 0; i < steps; i++) {
-    for (const clock of circuit.components.filter((c) => c.kind === "CLOCK")) {
-      clock.value = 0;
-    }
-    evaluate();
-    for (const clock of circuit.components.filter((c) => c.kind === "CLOCK")) {
-      clock.value = 1;
-    }
-    evaluate();
+    sim = stepGateInstruction(circuit, memory, keyboards);
+    memory = sim.memory;
+    const cpu = circuit.components.find((c) => c.kind === "BUS_CPU");
+    const clock = circuit.wires.find((w) => w.to === cpu?.id && w.port === 18)
+      ?.from;
+    const source = circuit.components.find((c) => c.id === clock);
+    if (source) source.value = 1;
     if (Object.values(memory.processors ?? {}).some((cpu) => cpu.halted)) {
       stop();
       break;
     }
+    if (performance.now() - yielded > 12) {
+      if (performance.now() - painted > 100) {
+        render();
+        painted = performance.now();
+      }
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      if (active !== circuit) return;
+      yielded = performance.now();
+    }
   }
   render();
 }
-function circuitComputerAPI(input: import("./agent-api.ts").ComputerInput) {
+async function circuitComputerAPI(
+  input: import("./agent-api.ts").ComputerInput,
+) {
   if (input.action !== "state") stop();
   if (input.action === "assemble") load(computerCircuit(input.source!));
   let cpu = circuit.components.find((c) => c.kind === "BUS_CPU");
@@ -2218,7 +2236,7 @@ function circuitComputerAPI(input: import("./agent-api.ts").ComputerInput) {
     for (const c of circuit.components) if (c.kind === "CLOCK") c.value = 0;
     evaluate();
   }
-  if (input.action === "step") advanceComputer(input.steps ?? 1);
+  if (input.action === "step") await advanceComputer(input.steps ?? 1);
   if (input.action === "key") {
     const keyboard = circuit.components.find((c) => c.kind === "BUS_KEYBOARD");
     if (keyboard) {
@@ -2386,10 +2404,16 @@ $(".inspector").addEventListener("click", (event) => {
       return;
     }
     stop();
-    memory.busRAM ??= {};
-    memory.busRAM[c.id] = { ...(memory.busRAM[c.id] ?? {}) };
-    bytes.forEach((v, i) =>
-      memory.busRAM![c.id][address + i] = parseInt(v, 16)
+    for (
+      const clock of circuit.components.filter((c) => c.kind === "CLOCK")
+    ) clock.value = 0;
+    evaluate();
+    memory = programGateMemory(
+      circuit,
+      memory,
+      c.id,
+      address,
+      bytes.map((v) => parseInt(v, 16)),
     );
     evaluate();
     render();
@@ -2466,7 +2490,7 @@ function paintInsideLeaf(c: Component, simulation: Simulation) {
       ? "Gate controls the conductive channel between source and drain. This is a logic switch model: Z means high impedance. It does not model analog voltage, current, capacitance, or transistor physics."
       : ["POWER", "GROUND", "INPUT", "OUTPUT", "JUNCTION"].includes(c.kind)
       ? "Electrical primitive. There is no lower component definition."
-      : "This component is currently a behavioral device model. A gate or transistor implementation is not available yet."
+      : "This is a physical input or output boundary. Its connected signals are shown above."
   }</p>`;
 }
 function paintInside() {

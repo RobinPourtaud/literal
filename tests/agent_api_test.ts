@@ -39,7 +39,7 @@ Deno.test("agent API rejects invalid arguments before application mutations", as
       ["computer", { action: "key", code: 65 }],
       ["computer", { action: "reset", source: "HALT" }],
       ["computer", { action: "step", steps: 10001 }],
-      ["set_circuit", { json: "a".repeat(2_000_001) }],
+      ["set_circuit", { json: "a".repeat(20_000_001) }],
     ] as [string, unknown][]
   ) await assert.rejects(() => api.call(name, input));
   await assert.rejects(() => api.call("unknown"));

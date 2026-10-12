@@ -51,12 +51,12 @@ memory is separate from the circuit document.
 
 ## Validation
 
-`parseCircuit` validates documents and removes extra fields. Limits are 500
-components, 2,000 wires, and 2 MB of text. IDs must be unique across components
-and wires, use letters, digits, underscores, or hyphens, and have 1–80
-characters. `__proto__`, `constructor`, and `prototype` are reserved. Names are
-at most 100 characters and labels at most 80. Coordinates must be finite and
-within ±100,000.
+`parseCircuit` validates documents and removes extra fields. Limits are 20,000
+components per scope, 50,000 wires per scope, and 20 MB of text. IDs must be
+unique across components and wires, use letters, digits, underscores, or
+hyphens, and have 1–80 characters. `__proto__`, `constructor`, and `prototype`
+are reserved. Names are at most 100 characters and labels at most 80.
+Coordinates must be finite and within ±100,000.
 
 Connections must reference existing components, an output-capable source, and a
 valid target port. Multiply driven inputs are rejected. Combinational feedback
@@ -74,10 +74,15 @@ form its outputs. The Input/Output array order determines pin order.
 
 Wires can have `fromPort` for a zero-based source output index; omission means
 zero. `port` remains the target input index. Definitions may reference other
-definitions in the same circuit. Recursive definitions, more than 12 levels of
-nesting, clocks, and flip-flops inside definitions are rejected. Limits are 100
-definitions, 2,000 expanded components per definition, and 5,000 expanded
-components per circuit. Simulation exposes additional custom outputs in
+definitions in the same circuit. Recursive definitions and more than 48 levels
+of nesting are rejected. Storage components can be included; physical clocks,
+keyboards, and displays stay outside the selection. Circuit files allow 2,000
+definitions, 100 million declared expanded parts per definition, and 200 million
+per circuit. Large memory banks elaborate only active branches. The editor's
+library allows 100 user components; internal hardware definitions are hidden.
+Input blocks can mark a timing pin with `clockInput: true`; gate feedback
+buffers preserve their initial value. Internal definitions carry
+`internal: true`. Simulation exposes additional custom outputs in
 `outputValues`; `values` holds the first output for compatibility.
 
 ## Byte devices and peripherals
@@ -111,8 +116,9 @@ VGA stores a 32 × 24 framebuffer. A known rising Write stores the RGB pixel at
 little-endian coordinates; Y 24–31 is ignored. Clear has priority. Unknown
 coordinates or RGB cancel the write and produce a diagnostic.
 
-Simulation memory includes `bytes`, `ram`, `screens`, and `writes` alongside
-flip-flop `q` / `clock`. Keyboard state is passed as the fourth argument to
-`simulate`; it is not stored in circuit files. Reset, reload, and file import
-reset memory. RAM, registers, counters, keyboards, and screens must stay outside
-custom combinational definitions and cannot generate truth tables.
+Simulation memory stores gate state in `gates`. `bytes`, `ram`, `screens`,
+`terminals`, and `processors` are projections for inspectors and rendering.
+Keyboard state is passed as the fourth argument to `simulate`; it is not stored
+in circuit files. Reset, reload, and file import reset memory. Registers,
+counters, and RAM can be saved in custom definitions. Clocked or interactive
+circuits cannot generate combinational truth tables.

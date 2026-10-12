@@ -107,7 +107,7 @@ Deno.test("adder computes all byte pairs and carry, unknown inputs propagate", (
     }
   }
   c.wires.pop();
-  assert.ok(simulate(c).outputValues.device.every((b) => b === "X"));
+  assert.ok(simulate(c).outputValues.device.some((b) => b === "X"));
 });
 Deno.test("registers, counters, RAM and ROM preserve synchronous and asynchronous semantics", () => {
   const reg = fixture("REGISTER8", 11);

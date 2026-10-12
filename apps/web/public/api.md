@@ -81,7 +81,7 @@ the source output index (default 0). Each input accepts one wire. Coordinates
 are component centers in canvas units; use 20-unit spacing. IDs must be unique,
 1–80 ASCII letters/digits/underscores/hyphens, excluding `__proto__`,
 `constructor`, `prototype`. Labels are at most 80 characters. Documents allow
-500 components, 2,000 wires, and 2 MB of JSON.
+20,000 components, 50,000 wires, and 20 MB of JSON.
 
 | Kind                          | Input ports                                  | Outputs                           |
 | ----------------------------- | -------------------------------------------- | --------------------------------- |
@@ -120,8 +120,9 @@ const definition = await window.literal.createComponent({
 
 Shapes are `rounded`, `rectangle`, or `diamond`. Selected INPUT/OUTPUT labels
 become pin names. Unconnected inputs and connections crossing the selection
-become interface pins. Stateful and interactive devices must stay outside. The
-definition is added to the document and browser library.
+become interface pins. Registers and RAM can be included. Physical clocks,
+keyboards, and displays stay outside. The definition is added to the document
+and browser library.
 
 Place it by including its definition in `circuit.definitions` and adding a node
 with `kind: 'CUSTOM'`, `definition: definition.id`, position and label. Custom
@@ -198,7 +199,9 @@ Use `getTools()` for the exact schemas of arguments to `call(name, args)`.
 The `assemble` action replaces the current canvas with a wired computer circuit.
 CPU execution reads ROM/RAM/peripheral pins and obtains arithmetic results from
 the gate ALU. Signals may be 0, 1, X (unknown), or Z (high impedance).
-Instruction control, registers, and memory remain behavioral models.
+Instruction control, registers, address decoding, and memory use NAND gate
+networks. Each instruction takes eight clock cycles; HALT stops during its
+execute phase.
 
 CLOCK components accept an optional `frequency` in Hz, from 0.1 to 10000. It is
 saved with the circuit and controls that clock’s independent UI playback. The

@@ -268,11 +268,11 @@ export const componentHelp: Record<Kind, ComponentHelp> = {
     why:
       "It lets your circuit execute a sequence of actions, rather than react only to the current inputs.",
     how:
-      "Connect its Clock, memory connections, and ALU connections. On each rising clock edge, it executes one instruction. The ALU is the circuit that performs arithmetic and logic.",
+      "Connect its Clock, memory connections, and ALU connections. Eight clock cycles fetch, decode, and execute one instruction. The ALU is the circuit that performs arithmetic and logic.",
     example:
       "A program can load 2 and 3 into registers, ask the ALU to add them, and store the result 5 in RAM.",
     note:
-      "The ALU uses simulated gates. Instruction control and registers in this CPU component are still simplified behavioral models.",
+      "Instruction decoding, control, and registers use NAND gates. See inside follows the actual circuit down to feedback latches and CMOS switches.",
   },
   BUS_ROM: {
     what:

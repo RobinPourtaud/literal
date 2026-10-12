@@ -371,16 +371,14 @@ test("gate selections infer shared boundary inputs and preserve unknown signals"
     definitions: [def],
   };
   assert.equal(simulate(c).values.o, "X");
-  assert.throws(
-    () =>
-      createDefinition(circuit([node("d", "DFF")]), new Set(["d"]), {
-        id: "d",
-        name: "D",
-        color: "#527d3c",
-        shape: "rounded",
-      }),
-    /combinational/,
-  );
+  const cell = createDefinition(circuit([node("d", "DFF")]), new Set(["d"]), {
+    id: "d",
+    name: "D",
+    color: "#527d3c",
+    shape: "rounded",
+  });
+  assert.equal(cell.components.filter((c) => c.kind === "INPUT").length, 2);
+  assert.ok(cell.components.some((c) => c.kind === "DFF"));
 });
 
 Deno.test("clock frequencies round-trip and reject invalid component settings", () => {

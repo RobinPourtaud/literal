@@ -1,8 +1,8 @@
+import { Computer } from "./reference-computer.ts";
 import assert from "node:assert/strict";
 import {
   assemble,
   biosGame,
-  Computer,
   grayOrder,
   minimizeLogic,
   snakeGame,

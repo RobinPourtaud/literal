@@ -9,7 +9,8 @@ through a 16-bit address / 8-bit data bus.
 - Select the Clock component. Its right panel has **Run clock**, **Step**, and
   **Frequency (Hz)**; frequency can change while running. The actual measured
   rate depends on browser and circuit performance.
-- **Step** toggles clocks once; an instruction runs on each rising edge.
+- **Step** toggles the clock once. Most instructions take eight full clock
+  cycles.
 - Click keyboard for virtual keys, physical capture, and key remapping.
 - Click screen for a preview; the framebuffer is also visible on the circuit.
 - Click ROM to edit assembly or hex bytes and assemble/reset the machine.
@@ -23,9 +24,10 @@ through a 16-bit address / 8-bit data bus.
 The CPU drives real address/data/control pins. ROM, RAM, keyboard, and screen
 respond through their connections. The ALU is a programmable AND/OR/NOT circuit;
 its wired results feed the CPU. Disconnecting or changing wires changes
-behavior. Instruction sequencing, registers, memory, and peripherals are
-behavioral models. Gate inspection exposes digital CMOS switch networks, not
-analog physics.
+behavior. Instruction sequencing, registers, memory cells, address decoding, and
+display decoding use NAND gate networks. The runtime only evaluates gates and
+feedback. Keyboard events, clock timing, assembly, and drawing pixels are host
+functions. Inspection exposes digital CMOS switch networks, not analog physics.
 
 ## Run the included game
 
@@ -120,16 +122,18 @@ HALT
 ## Reuse from Deno or another app
 
 ```ts
-import { assemble, biosGame, Computer } from "@literal/core";
+import { biosGame, GateComputer } from "@literal/core";
 
-const program = assemble(biosGame);
-const computer = new Computer(program.rom);
-computer.run(1000);
+const computer = new GateComputer(biosGame);
+computer.step(1000);
 computer.keyboard = { code: 131, pressed: true };
-computer.run(1000);
-console.log(computer.registers, computer.read(0x2000));
+computer.step(1000);
+console.log(computer.processor.registers, computer.simulation.memory);
 ```
 
-The assembler returns ROM bytes, labels, and an address/source listing. The
-machine exposes registers, memory access, framebuffer, flags, terminal, and
-instruction count. `run` accepts at most 100,000 instructions per call.
+The assembler returns ROM bytes, labels, and an address/source listing.
+`GateComputer` drives the same connected gate circuit as the editor. `step(n)`
+advances until n instructions retire, rather than interpreting opcodes. The
+processor, RAM, framebuffer, and terminal snapshots are read-only projections of
+gate state. Yield between batches in an interactive app; gate-level execution is
+slower than an instruction interpreter. `reset()` clears the simulated circuit.
