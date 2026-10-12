@@ -1484,3 +1484,33 @@ dialog::backdrop {
 .lesson-actions {
   flex-shrink: 0;
 }
+
+.lesson-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.lesson-hint-button {
+  padding: 5px 9px;
+  font-size: 12px;
+  color: var(--green);
+  background: #f9faf6;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+.lesson-hint-panel {
+  max-width: 560px;
+  padding: 4px 0 12px;
+}
+.lesson-hint-panel h3 {
+  font-size: 17px;
+  line-height: 1.5;
+  margin: 0 0 14px;
+}
+.lesson-hint-panel p {
+  font-size: 15px;
+  line-height: 1.8;
+  margin: 0;
+}

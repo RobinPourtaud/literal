@@ -116,7 +116,7 @@ try {
     false,
   );
   await run(
-    `(()=>{document.querySelector('#discover-guide details').open=true;document.querySelector('[data-lesson=next]').click();return 'ok'})()`,
+    `(()=>{document.querySelector('[data-lesson=hint]').click();document.querySelector('#close-dialog').click();document.querySelector('[data-lesson=next]').click();return 'ok'})()`,
   );
   await run(
     `(()=>{document.querySelector('[data-lesson=save]').click();document.querySelector('#custom-form').requestSubmit();return 'ok'})()`,

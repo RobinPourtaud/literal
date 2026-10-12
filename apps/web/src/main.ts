@@ -1163,6 +1163,16 @@ $("#app").addEventListener("click", (e) => {
     return;
   }
   if (b.dataset.lesson) {
+    if (b.dataset.lesson === "hint") {
+      const lesson = lessons[lessonStep];
+      dialog(
+        `Hint · Step ${lessonStep + 1}`,
+        `<div class="lesson-hint-panel"><h3>${esc(lesson.title)}</h3><p>${
+          esc(lesson.hint)
+        }</p></div>`,
+      );
+      return;
+    }
     if (b.dataset.lesson === "next") {
       lessonStep = Math.min(lessons.length - 1, lessonStep + 1);
     }
@@ -2234,7 +2244,6 @@ function renderDiscover() {
   const target = $("#discover-guide");
   target.hidden = mode !== "discover";
   if (mode !== "discover") return;
-  const hintOpen = target.querySelector("details")?.open ?? false;
   const checks = lessonChecks(
     circuit,
     sim,
@@ -2249,35 +2258,36 @@ function renderDiscover() {
       sim.values[gate.input.id]
     }</strong> → Output <strong>${sim.values[gate.output.id]}</strong></div>`
     : "";
-  target.innerHTML = `<div class="lesson-progress">FIRST GATE · ${
-    lessonStep + 1
-  } / ${lessons.length}</div><h2>${
-    esc(lesson.title)
-  }</h2><div class="lesson-content"><p>${esc(lesson.text)}</p>${live}<details ${
-    hintOpen ? "open" : ""
-  }><summary>Hint</summary><p>${
-    esc(lesson.hint)
-  }</p></details><p class="lesson-check" role="status">${
-    checks[lessonStep]
-      ? "✓ Step complete"
-      : lessonStep === 4
-      ? "Test A at both 0 and 1"
-      : "Build this step on the canvas"
-  }</p></div><div class="lesson-actions"><button data-lesson="previous" ${
-    lessonStep === 0 ? "disabled" : ""
-  }>Back</button>${
-    lessonStep === 5
-      ? `<button data-lesson="save" ${
-        !firstGate(circuit) ? "disabled" : ""
-      }>Save gate</button>`
-      : `<button class="primary" data-lesson="next" ${
-        checks[lessonStep] ? "" : "disabled"
-      }>Next</button>`
-  }</div>${
-    lessonStep === 5 && checks[5]
-      ? "<p>Your gate is in the library. Try building NAND next.</p>"
-      : ""
-  }`;
+  target.innerHTML =
+    `<div class="lesson-heading"><div class="lesson-progress">FIRST GATE · ${
+      lessonStep + 1
+    } / ${lessons.length}</div><button data-lesson="hint" class="lesson-hint-button" aria-label="Show hint for step ${
+      lessonStep + 1
+    }">Hint</button></div><h2>${
+      esc(lesson.title)
+    }</h2><div class="lesson-content"><p>${
+      esc(lesson.text)
+    }</p>${live}<p class="lesson-check" role="status">${
+      checks[lessonStep]
+        ? "✓ Step complete"
+        : lessonStep === 4
+        ? "Test A at both 0 and 1"
+        : "Build this step on the canvas"
+    }</p></div><div class="lesson-actions"><button data-lesson="previous" ${
+      lessonStep === 0 ? "disabled" : ""
+    }>Back</button>${
+      lessonStep === 5
+        ? `<button data-lesson="save" ${
+          !firstGate(circuit) ? "disabled" : ""
+        }>Save gate</button>`
+        : `<button class="primary" data-lesson="next" ${
+          checks[lessonStep] ? "" : "disabled"
+        }>Next</button>`
+    }</div>${
+      lessonStep === 5 && checks[5]
+        ? "<p>Your gate is in the library. Try building NAND next.</p>"
+        : ""
+    }`;
 }
 function chooseMode() {
   dialog(
