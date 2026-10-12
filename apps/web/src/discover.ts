@@ -11,28 +11,28 @@ export const lessons = [
     text:
       "We will build NOT: when input A is 0, the output is 1; when A is 1, the output is 0. Start with two Power components and one Ground.",
     hint:
-      "One Power is the supply, VDD. The other is our switchable input, A. Select it to rename it A. Ground provides 0. Power starts at 1; click it to toggle.",
+      "Keep one Power block at 1: this is our supply, called VDD. Name the other Power block A and click it to choose 0 or 1. A will be the input we test. Ground gives us a constant 0.",
   },
   {
     title: "Add two transistors",
     text:
       "Place one PMOS and one NMOS. They will connect our output to the supply or to ground.",
     hint:
-      "PMOS conducts when its Gate is 0. NMOS conducts when its Gate is 1. When off, a transistor outputs Z: high impedance, rather than 0.",
+      "Think of each transistor as a switch. Gate is the pin that controls it. PMOS turns on for Gate 0; NMOS turns on for Gate 1. When off, the switch is disconnected, shown as Z. Select a transistor and click Info to learn what its pins do.",
   },
   {
     title: "Connect the input and supplies",
     text:
       "Connect A to both Gate pins. Connect VDD to the PMOS Source, and Ground to the NMOS Source.",
     hint:
-      "Click a source's output pin, then a transistor's input pin. Gate is the upper input; Source is the lower input. A fans out to both Gate pins. Keep VDD at 1.",
+      "Click a source's output pin, then a transistor's input pin. Gate is the upper input; Source is the lower input. Connect the same A output to both Gate pins. Keep VDD at 1.",
   },
   {
     title: "Join the two drains",
     text:
       "Add a Junction. Connect the PMOS Drain to one input and the NMOS Drain to the other. The Junction output is our NOT result.",
     hint:
-      "A junction merges drivers. An off transistor contributes Z, so the conducting transistor determines the output. Two opposite driven levels would produce X.",
+      "The junction joins the two transistor outputs. One switch is on and supplies 0 or 1; the other is off and supplies nothing (Z). The junction keeps the value from the switch that is on. If two paths try to supply opposite values, the result is X: a conflict.",
   },
   {
     title: "Test both input values",

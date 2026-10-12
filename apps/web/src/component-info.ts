@@ -1,126 +1,376 @@
 import type { Kind } from "@literal/core";
+export type ComponentHelp = {
+  what: string;
+  why: string;
+  how: string;
+  example: string;
+  note?: string;
+};
+export const componentHelp: Record<Kind, ComponentHelp> = {
+  NMOS: {
+    what:
+      "A transistor is an electrically controlled switch. An NMOS transistor is one type of transistor. In this simulator, a 1 at its Gate turns the switch on; a 0 turns it off.",
+    why:
+      "It lets one signal control another. Connect its Source to Ground and it can bring an output down to 0. Together with a PMOS transistor, it forms a NOT gate. Transistors are the building blocks of logic gates and memory.",
+    how:
+      "Gate is the control input. Source is the value being switched. Drain is the output. When on, Drain gets the Source value. When off, Drain is disconnected: we show Z, not 0.",
+    example:
+      "Connect Source to Ground (0). Set Gate to 1: Drain becomes 0. Set Gate to 0: Drain becomes Z. In a NOT gate, the PMOS supplies the missing 1 when the NMOS is off.",
+    note:
+      "We use a simplified switch model. Real transistors control electrical current; this app does not calculate voltages or currents.",
+  },
+  PMOS: {
+    what:
+      "A PMOS transistor is another electrically controlled switch. It responds to the opposite control value from NMOS: Gate 0 turns it on, and Gate 1 turns it off in this simulator.",
+    why:
+      "Connect its Source to Power and it can bring an output up to 1. Pair it with an NMOS connected to Ground to build a NOT gate: one provides 1 while the other provides 0.",
+    how:
+      "Gate controls the switch. Source is the value being switched; Drain is the output. When off, Drain is disconnected and shows Z.",
+    example:
+      "Connect Source to Power (1). Gate 0 gives Drain 1; Gate 1 gives Drain Z. Connect the same input to an NMOS Gate to make the two switches take turns.",
+    note:
+      "This is a simplified digital switch, rather than a calculation of the electrical behavior of a real transistor.",
+  },
+  POWER: {
+    what:
+      "Power is a source of the value 1. Think of it as the high level in a digital circuit.",
+    why:
+      "A circuit needs a source of 1 to produce high outputs. You can also use a separate Power block as a switchable input in Discover.",
+    how:
+      "Connect its output to an input pin. It starts at 1. Click the block to toggle it between 1 and 0.",
+    example:
+      "Use one Power block as the supply for a PMOS transistor. Use a second Power block, named A, to control its Gate.",
+  },
+  GROUND: {
+    what: "Ground provides a constant 0, the low level in our digital circuit.",
+    why:
+      "It gives a circuit a way to produce a definite 0, instead of leaving an output disconnected.",
+    how: "Connect its output to a component input. Ground always stays at 0.",
+    example:
+      "Connect Ground to an NMOS Source. When that transistor turns on, its Drain becomes 0.",
+  },
+  JUNCTION: {
+    what: "A junction joins two signal paths into one output.",
+    why:
+      "A transistor can be off, leaving its output disconnected. A junction lets another transistor provide the output value instead.",
+    how:
+      "Connect the two paths to its inputs. A 0 or 1 takes priority over a disconnected Z. If both inputs drive opposite values, the result is X: a conflict.",
+    example:
+      "Join the PMOS and NMOS Drains in a NOT gate. If one gives 1 and the other is Z, the junction outputs 1.",
+  },
+  INPUT: {
+    what:
+      "An input is a value you choose: 0 or 1. A single such value is called a bit.",
+    why:
+      "Use inputs to test a gate or supply a control signal to a larger circuit.",
+    how:
+      "Connect its output to a component. Click it, or press Enter while it is focused, to change its value.",
+    example:
+      "Connect two inputs to an AND gate. Toggle them to check all four combinations: 00, 01, 10, and 11.",
+  },
+  OUTPUT: {
+    what: "An output block shows the value arriving at its input.",
+    why:
+      "It helps you check a circuit. It also defines an output pin when you save a reusable component.",
+    how:
+      "Connect the signal you want to observe. Give the block a name that describes the result.",
+    example:
+      "Connect a NOT gate to an Output named Result. Changing the NOT input from 0 to 1 should change Result from 1 to 0.",
+  },
+  LED: {
+    what:
+      "An LED is a small indicator light. Here, it lights for 1 and turns off for 0.",
+    why: "It makes a circuit's result easy to see without reading a number.",
+    how: "Connect one signal to its input. Amber means the signal is unknown.",
+    example:
+      "Connect an AND output to an LED. The light turns on only when both AND inputs are 1.",
+    note:
+      "This is a visual indicator, not a model of a physical diode and its current.",
+  },
+  CLOCK: {
+    what:
+      "A clock repeatedly switches between 0 and 1. It gives a circuit a regular beat.",
+    why:
+      "Memory and processors need to agree on when to update. Many components update when the clock changes from 0 to 1, called a rising edge.",
+    how:
+      "Connect it to Clock inputs. Select it to run, pause, or step it from the right panel. Frequency is measured in Hz: complete cycles per second. Each clock has its own frequency.",
+    example:
+      "Set a clock to 1 Hz and connect it to a counter. With Enable at 1, the counter increases once per second. Step changes the clock once; two steps make a complete cycle.",
+  },
+  NOT: {
+    what: "NOT reverses one bit: 0 becomes 1, and 1 becomes 0.",
+    why:
+      "Use it when you need the opposite of a condition, such as 'not enabled'.",
+    how: "Connect one input signal and use the output as its opposite.",
+    example:
+      "Input 0 gives output 1. Input 1 gives output 0. See inside shows the two transistors that build this behavior.",
+  },
+  AND: {
+    what: "AND outputs 1 only when both inputs are 1.",
+    why: "Use it when two conditions must hold at the same time.",
+    how: "Connect the two conditions to its two inputs.",
+    example:
+      "For 'button pressed AND system enabled', the output stays 0 unless both signals are 1.",
+  },
+  OR: {
+    what: "OR outputs 1 when at least one input is 1. Both may also be 1.",
+    why: "Use it when either of two conditions should activate something.",
+    how: "Connect the two conditions to its inputs.",
+    example:
+      "For 'left button OR right button', pressing either button produces 1. The output is 0 only when neither is pressed.",
+  },
+  NAND: {
+    what:
+      "NAND is AND followed by NOT. Its output is 0 only when both inputs are 1.",
+    why:
+      "NAND is a useful building block: you can combine NAND gates to make every other Boolean logic function.",
+    how: "Connect two bits to its inputs.",
+    example:
+      "Inputs 00, 01, and 10 give 1. Inputs 11 give 0. Connecting the same bit to both inputs makes it behave like NOT.",
+  },
+  NOR: {
+    what:
+      "NOR is OR followed by NOT. Its output is 1 only when both inputs are 0.",
+    why:
+      "It checks that neither condition is true. Two NOR circuits connected back to each other can also store a bit.",
+    how: "Connect two bits to its inputs.",
+    example: "Inputs 00 give 1. Inputs 01, 10, and 11 give 0.",
+  },
+  XOR: {
+    what: "XOR outputs 1 when its two inputs are different.",
+    why: "It detects differences and is part of binary addition.",
+    how: "Connect the two bits you want to compare.",
+    example:
+      "0 XOR 1 gives 1, but 1 XOR 1 gives 0. In a half adder, XOR produces the sum bit.",
+  },
+  XNOR: {
+    what: "XNOR outputs 1 when its two inputs are the same.",
+    why: "Use it to check whether two bits are equal.",
+    how: "Connect the bits you want to compare.",
+    example: "Inputs 00 and 11 give 1. Inputs 01 and 10 give 0.",
+  },
+  BUFFER: {
+    what: "A buffer copies its input to its output.",
+    why: "It can make a signal path easier to label and follow in a diagram.",
+    how: "Connect one signal to its input and use the identical output.",
+    example: "Input 1 gives output 1. Input 0 gives output 0.",
+    note:
+      "Real buffers can strengthen electrical signals. This app does not model that electrical effect.",
+  },
+  MUX: {
+    what:
+      "A multiplexer, or MUX, chooses one of two values to send to its output.",
+    why: "Use it when a circuit must choose between two sources of data.",
+    how:
+      "Connect the values to D0 and D1. Select 0 chooses D0; Select 1 chooses D1.",
+    example:
+      "Connect 0 to D0 and 1 to D1. Changing Select switches which value appears at the output.",
+  },
+  DFF: {
+    what:
+      "A D flip-flop stores one bit. Unlike a gate, it remembers a value after its input changes.",
+    why: "It is a basic building block for registers and other memory.",
+    how:
+      "Connect the value to Data and a clock to Clock. On a rising edge (0 to 1), it saves Data. Between edges, its output keeps the saved bit.",
+    example:
+      "Set Data to 1 and pulse Clock from 0 to 1. The output stays 1 even if you then change Data to 0. The next rising edge saves the new 0.",
+  },
+  REGISTER8: {
+    what:
+      "An eight-bit register stores eight bits together: one byte, which can represent a number from 0 to 255.",
+    why:
+      "A processor uses registers to keep numbers it is currently working with.",
+    how:
+      "Connect the bits to D0–D7. Set Enable to 1 and pulse Clock from 0 to 1 to save them. Clear resets the value to 0. Bit 0 is the lowest-value bit.",
+    example:
+      "Set only D0 to 1 and the other bits to 0. A rising clock edge saves the number 1.",
+  },
+  COUNTER8: {
+    what:
+      "An eight-bit counter remembers a number and increases it by one on each clock pulse.",
+    why:
+      "Use it to count events, step through memory locations, or keep track of time.",
+    how:
+      "Connect a clock and set Enable to 1. Each rising edge adds one. Clear resets it to 0; after 255, it wraps back to 0.",
+    example:
+      "Connect a 1 Hz clock. Starting at 0, the counter shows 1, 2, 3, and so on at one-second intervals.",
+  },
+  ADDER8: {
+    what: "An eight-bit adder adds two byte-sized numbers.",
+    why:
+      "It performs the arithmetic that larger circuits, including processors, need.",
+    how:
+      "Connect the two numbers to A0–A7 and B0–B7. Use Carry in as an extra 0 or 1. The result is eight bits; Carry out indicates a sum above 255.",
+    example:
+      "255 + 1 gives result 0 and Carry out 1: the full result, 256, needs a ninth bit.",
+  },
+  RAM: {
+    what:
+      "RAM is memory you can read and write. This component holds 256 bytes, each at a numbered location called an address.",
+    why: "Use it to keep data that changes while a program or circuit runs.",
+    how:
+      "A0–A7 choose an address. D0–D7 provide a byte to write. With Write at 1, a rising Clock edge saves it. The output shows the byte at the chosen address.",
+    example:
+      "Write the number 42 at address 3, then choose address 3 again to read back 42. Reset simulation clears this memory.",
+  },
+  ROM: {
+    what:
+      "ROM holds bytes you prepare in advance. This component has 256 locations.",
+    why:
+      "Use it for a program, fixed data, or a table that translates inputs into outputs.",
+    how:
+      "Enter hex bytes in the inspector. A0–A7 select a location; the output shows the byte stored there. Locations you have not filled contain 0.",
+    example:
+      "Put 2A at address 0. Selecting address 0 returns 42, because hexadecimal 2A means decimal 42.",
+  },
+  SEVEN_SEG: {
+    what:
+      "A seven-segment display forms digits using seven small bars, plus a decimal point.",
+    why: "It is a simple way to display a circuit's result as a visible digit.",
+    how:
+      "Each input, a–g, controls one bar: 1 lights it. The dp input controls the decimal point. You must choose which bars light for each digit.",
+    example:
+      "Lighting all seven bars displays 8. A decoder circuit can turn four input bits into the correct bars for a digit.",
+  },
+  HEX_DISPLAY: {
+    what:
+      "A hexadecimal display shows one digit from 0 to F. A–F represent the numbers 10–15.",
+    why:
+      "It lets you read four bits as one compact digit, useful for inspecting binary data.",
+    how:
+      "Connect four bits. Their values are 1, 2, 4, and 8, starting at bit 0. Add the values of the bits that are 1 to find the displayed number.",
+    example: "Bits 0 and 3 at 1, with the others at 0, display 9: 1 + 8 = 9.",
+  },
+  VGA: {
+    what:
+      "This is a small 32 × 24 pixel screen. It remembers a color for each pixel.",
+    why:
+      "Use it to display patterns, pictures, or a game's output from a circuit.",
+    how:
+      "The X and Y bits choose a pixel. Red, Green, and Blue each turn one color channel on or off. A rising Write pulse draws that pixel. Clear empties the screen.",
+    example:
+      "Choose X = 5 and Y = 3, set Green to 1 and the other colors to 0, then pulse Write. A green pixel appears.",
+    note:
+      "Despite the name, this component does not simulate the timing signals of a real VGA cable.",
+  },
+  KEYBOARD: {
+    what: "A keyboard turns a key press into a number that a circuit can read.",
+    why:
+      "It lets someone control a circuit or game with physical or on-screen keys.",
+    how:
+      "Capture your keyboard or use the virtual keys in the inspector. D0–D7 give the key's code; Pressed is 1 while held. The code stays after release, but Pressed returns to 0.",
+    example:
+      "Press A: the code is 65. Connect the bits to memory or a processor so it can decide what A should do.",
+  },
+  BUS_CPU: {
+    what:
+      "The CPU is the part of the computer that follows a program's instructions. This one works with eight-bit numbers.",
+    why:
+      "It lets your circuit execute a sequence of actions, rather than react only to the current inputs.",
+    how:
+      "Connect its Clock, memory connections, and ALU connections. On each rising clock edge, it executes one instruction. The ALU is the circuit that performs arithmetic and logic.",
+    example:
+      "A program can load 2 and 3 into registers, ask the ALU to add them, and store the result 5 in RAM.",
+    note:
+      "The ALU uses simulated gates. Instruction control and registers in this CPU component are still simplified behavioral models.",
+  },
+  BUS_ROM: {
+    what:
+      "This ROM holds the wired computer's program. It has 8 KiB of space: 8,192 bytes.",
+    why:
+      "The CPU needs somewhere to read its first instructions when the computer starts.",
+    how:
+      "Connect the address pins to the CPU and the data outputs to its read-data connections. Edit assembly in the inspector, then assemble it into ROM. Addresses 0000–1FFF belong to this ROM.",
+    example:
+      "Put instructions in ROM to write a color to the screen. Reset, then run the computer's clock to execute them.",
+  },
+  BUS_RAM: {
+    what:
+      "This is the wired computer's working memory. It holds data the CPU can read and change.",
+    why:
+      "Programs need space for changing values, such as a game's score, player position, and saved intermediate results.",
+    how:
+      "Connect the address, data, and Write pins to the CPU. Addresses 2000–EFFF belong to RAM. You can also inspect or write bytes in the right panel.",
+    example:
+      "The Snake program stores its score at address 2001. Reading that byte tells you how much food the snake has collected.",
+  },
+  BUS_SCREEN: {
+    what:
+      "A small screen that the CPU controls by writing to memory addresses. It has 32 × 24 pixels.",
+    why: "It gives programs a visible output, such as a drawing or game board.",
+    how:
+      "Connect it to the CPU's address, data, and Write pins. Each address from F000 to F2FF selects one pixel; its byte chooses a color. Writing a nonzero value to FF02 clears the screen.",
+    example:
+      "The CPU can draw a triangle by writing colors to several pixels. You can see the image on the component or pin a larger preview on the right.",
+  },
+  BUS_KEYBOARD: {
+    what:
+      "A keyboard connection that the CPU reads through two memory addresses.",
+    why: "It lets a program react to keys, for example to move a player.",
+    how:
+      "Connect its address pins and data outputs to the CPU's memory connections. Address FF00 gives the key's code; FF01 is 1 while the key is pressed. Capture or map keys in the inspector.",
+    example:
+      "A game reads the key code and moves right when it sees the right-arrow code. At slow clock speeds, hold a key long enough for the program to read it.",
+  },
+  BUS_TERMINAL: {
+    what:
+      "A text output device. It displays characters that a program sends to it.",
+    why:
+      "Use it for messages, results, and debugging, without having to draw letters on the pixel screen.",
+    how:
+      "Connect address, data, and Write to the CPU. Each write to address FF03 adds one character. Pin it on the right to keep the text visible.",
+    example:
+      "The BIOS writes its RAM test result to the terminal. A successful boot prints that the self-test passed.",
+  },
+  CUSTOM: {
+    what: "A custom component is a circuit you have saved and given a name.",
+    why:
+      "It lets you reuse a useful circuit without drawing its internal parts every time.",
+    how:
+      "Connect its named input and output pins. See inside opens the actual circuit. Edit its name, description, color, and shape from the library.",
+    example:
+      "Save your transistor-built NOT gate, then place several copies to use it in a larger circuit.",
+  },
+};
 export const descriptions: Record<Kind, string> = {
-  NMOS:
-    "Conducts source to drain when Gate is 1; otherwise high impedance (Z).",
-  PMOS:
-    "Conducts source to drain when Gate is 0; otherwise high impedance (Z).",
-  POWER: "Ideal logic supply (1).",
-  GROUND: "Ideal ground (0).",
-  JUNCTION:
-    "Merge two electrical drivers. Z floats; conflicting drivers give X.",
-  BUS_CPU:
-    "Literal 8 instruction controller and registers. Uses the wired data bus and external ALU.",
-  BUS_ROM: "8 KiB boot ROM. 16-bit address bus. Edit assembly or hex bytes.",
-  BUS_RAM:
-    "52 KiB RAM. Address, data and write pins; non-selected addresses output zero.",
-  BUS_SCREEN:
-    "32 × 24 RGB framebuffer on F000–F2FF. Visible on the circuit; pin for a larger view.",
-  BUS_KEYBOARD:
-    "Addressed keyboard interface at FF00 / FF01. Pin to capture keys.",
-  BUS_TERMINAL: "ASCII output at FF03. Pin to read boot and program output.",
-  INPUT: "Toggle a logic signal.",
-  OUTPUT: "Show a signal value.",
-  LED: "Light when the input is high. Amber means unknown.",
-  SEVEN_SEG:
-    "Drive segments a–g and the decimal point separately. 1 lights a segment; X is shown in amber.",
-  HEX_DISPLAY:
-    "Show hexadecimal 0–F from four bits. Bit 0 has weight 1; bit 3 has weight 8. All four inputs must be connected.",
-  VGA:
-    "32 × 24 RGB pixel screen. Write on a rising edge; Clear resets the framebuffer.",
-  KEYBOARD:
-    "Mapped physical and virtual keys. Eight ASCII bits and a Pressed output.",
-  REGISTER8:
-    "Eight-bit register. Rising Clock captures data when Enable is high. Clear resets immediately.",
-  COUNTER8:
-    "Eight-bit counter. Rising Clock increments when Enable is high. Clear resets immediately.",
-  ADDER8: "Eight-bit addition with carry in and carry out.",
-  RAM:
-    "256-byte RAM. Write on a rising Clock when Write is high. Read is asynchronous.",
-  ROM:
-    "256-byte ROM. Edit hex bytes in the inspector. Missing bytes read as zero.",
-  AND: "High when both inputs are high.",
-  OR: "High when either input is high.",
-  NOT: "Invert an input.",
-  NAND: "AND followed by inversion.",
-  NOR: "OR followed by inversion.",
-  XOR: "High when inputs differ.",
-  XNOR: "High when inputs match.",
-  BUFFER: "Pass a signal through.",
-  MUX: "Select data 0 or data 1.",
-  CLOCK: "A clock you can step or run.",
-  DFF: "Store data on the rising clock edge.",
-  CUSTOM:
-    "A reusable gate or switch network. Pin names come from its Input and Output blocks.",
+  NMOS: "A transistor switch that turns on when its Gate is 1.",
+  PMOS: "A transistor switch that turns on when its Gate is 0.",
+  POWER: "Provides 1; click to switch between 1 and 0.",
+  GROUND: "Provides a constant 0.",
+  JUNCTION: "Joins two signal paths into one output.",
+  INPUT: "A bit you can switch between 0 and 1.",
+  OUTPUT: "Shows a circuit's result.",
+  LED: "A light that turns on for 1 and off for 0.",
+  CLOCK: "A regular beat that tells a circuit when to update.",
+  NOT: "Reverses a bit: 0 becomes 1, and 1 becomes 0.",
+  AND: "Outputs 1 only when both inputs are 1.",
+  OR: "Outputs 1 when either or both inputs are 1.",
+  NAND: "Outputs 0 only when both inputs are 1.",
+  NOR: "Outputs 1 only when both inputs are 0.",
+  XOR: "Outputs 1 when the two inputs are different.",
+  XNOR: "Outputs 1 when the two inputs are the same.",
+  BUFFER: "Copies its input to its output.",
+  MUX: "Chooses which of two inputs reaches the output.",
+  DFF: "Remembers one bit until the next clock pulse.",
+  REGISTER8: "Stores eight bits together as one number.",
+  COUNTER8: "Counts clock pulses, from 0 to 255.",
+  ADDER8: "Adds two eight-bit numbers.",
+  RAM: "Memory you can read and write: 256 bytes.",
+  ROM: "Stores 256 bytes you prepare in advance.",
+  SEVEN_SEG: "Seven bars that can form a digit.",
+  HEX_DISPLAY: "Shows four bits as a digit from 0 to F.",
+  VGA: "A pixel screen you can draw on with circuit signals.",
+  KEYBOARD: "Turns key presses into numbers a circuit can read.",
+  BUS_CPU: "Follows a program's instructions, one step at a time.",
+  BUS_ROM: "Stores the wired computer's program.",
+  BUS_RAM: "Stores the wired computer's changing data.",
+  BUS_SCREEN: "A pixel screen controlled by the CPU.",
+  BUS_KEYBOARD: "Lets the CPU read key presses.",
+  BUS_TERMINAL: "Shows text sent by a program.",
+  CUSTOM: "A saved circuit you can reuse as one component.",
 };
-export const explanations: Record<Kind, string> = {
-  POWER:
-    "A logic-level supply, initially 1. Click to toggle between 0 and 1. Use one as VDD and a separate switchable one as an input while building transistor circuits.",
-  GROUND:
-    "A fixed 0. Connect it to an NMOS Source to pull a node low when that transistor conducts. This simulator models digital levels, rather than voltage or current.",
-  NMOS:
-    "Connect a control signal to Gate and the signal to be switched to Source. Drain follows Source while Gate is 1. When Gate is 0, Drain is Z (floating). Combine it with a PMOS pull-up to build a NOT gate.",
-  PMOS:
-    "Connect a control signal to Gate and the signal to be switched to Source. Drain follows Source while Gate is 0. When Gate is 1, Drain is Z. A PMOS connected to VDD pulls a node high.",
-  JUNCTION:
-    "Connect two transistor Drains to its inputs. A driven 0 or 1 wins over Z. Two agreeing drivers preserve the level; opposite driven levels produce X. Do not connect VDD directly to Ground.",
-  INPUT:
-    "Click or press Enter to toggle 0 and 1. Its output can fan out to several gates. In a reusable component, its label becomes an external input pin.",
-  OUTPUT:
-    "Connect a signal to observe its current value. In a reusable component, this block exposes an output pin; its label names that pin.",
-  LED:
-    "Connect one signal. High lights it, low turns it off, and an unknown signal is amber. It is an indicator, rather than an electrical diode model.",
-  CLOCK:
-    "Connect its output to clocked components. Select the clock to set its frequency and run, pause, or step it from the right panel. Each clock has its own saved frequency and runs independently. Registers capture on rising edges, so two steps make a full cycle.",
-  NOT:
-    "One input, one output. 0 → 1 and 1 → 0. See inside reveals a PMOS pull-up and NMOS pull-down joined at the output.",
-  AND:
-    "Two inputs. Only 1 AND 1 gives 1; all other known input combinations give 0. Use it when both conditions must be true.",
-  OR:
-    "Two inputs. 0 OR 0 gives 0; either input at 1 gives 1. Use it when either condition can activate an output.",
-  NAND:
-    "Two inputs. Only 1 NAND 1 gives 0. It is the inverse of AND, and combinations of NAND gates can implement every Boolean function.",
-  NOR:
-    "Two inputs. Only 0 NOR 0 gives 1. It is the inverse of OR. Two NOR networks with feedback can form a set/reset latch.",
-  XOR:
-    "Two inputs. Equal bits produce 0; different bits produce 1. Useful for the sum bit in a half adder and for detecting differences.",
-  XNOR:
-    "Two inputs. Equal bits produce 1; different bits produce 0. Use it for a one-bit equality comparison.",
-  BUFFER:
-    "Copies the input to the output. Useful for naming or routing a signal. It has no modeled analog gain or propagation delay.",
-  MUX:
-    "Connect data to D0 and D1 and a control bit to Select. Select 0 routes D0; Select 1 routes D1. Use multiplexers to choose which value reaches a register or bus.",
-  DFF:
-    "Connect Data and Clock. A known 0-to-1 Clock transition captures Data; the output holds that bit between edges. Reset simulation clears its stored state.",
-  REGISTER8:
-    "Connect D0–D7, Clock, Enable, and Clear. With Enable at 1, each rising edge captures eight bits. Clear resets immediately. Bit 0 is the least significant bit.",
-  COUNTER8:
-    "Connect Clock, Enable, and Clear. With Enable at 1, rising edges increment its eight-bit value, wrapping after 255. Clear resets immediately. It can drive a memory address or a hexadecimal readout.",
-  ADDER8:
-    "Connect A0–A7, B0–B7, and Carry in. Result0–7 contain the low eight sum bits; Carry out reports overflow. Addition updates immediately as inputs change.",
-  RAM:
-    "Use A0–A7 to select one of 256 bytes. Connect D0–D7, Write, and Clock; a rising edge with Write high stores a byte. The output shows the addressed byte asynchronously. Reset simulation clears memory.",
-  ROM:
-    "Use A0–A7 to choose one of 256 fixed bytes. Edit space-separated hex bytes in the inspector. Outputs update immediately with the address. Unspecified bytes read as zero.",
-  SEVEN_SEG:
-    "Connect a–g to drive the seven bars and dp for the decimal point. Each 1 lights one segment. To display a number, build a decoder that converts input bits into these eight signals.",
-  HEX_DISPLAY:
-    "Connect four bits, bit 0 through bit 3, to display 0–F. Bit weights are 1, 2, 4, and 8. Unknown or floating input bits prevent decoding.",
-  VGA:
-    "Connect five X bits, five Y bits, and one bit each for Red, Green, and Blue. A rising Write pulse stores the color at that pixel. Clear empties the screen. This is a 32 × 24 framebuffer interface, not analog VGA timing.",
-  KEYBOARD:
-    "Capture the physical keyboard or use the inspector's virtual keys. Map physical keys to virtual values. D0–D7 contain the key's uppercase ASCII code; Pressed is 1 while held. The code stays latched after release.",
-  BUS_CPU:
-    "Each rising clock edge executes one Literal 8 instruction. Connect address, read/write, and data pins to the memory bus and arithmetic pins to the external gate ALU. Instruction sequencing and registers are behavioral models.",
-  BUS_ROM:
-    "The boot program lives at 0000–1FFF. Connect address pins to the CPU and data outputs to the shared read bus. Edit assembly and assemble into ROM, or load hex bytes. Assembling resets the circuit.",
-  BUS_RAM:
-    "The wired computer stores working data at 2000–EFFF. Connect address, data, and Write to the CPU bus. The inspector reads contents and writes hex bytes while paused. Addresses outside this range return zero.",
-  BUS_SCREEN:
-    "The CPU writes three-bit RGB colors to F000–F2FF, one byte per pixel in a 32 × 24 screen. A nonzero write to FF02 clears it. View the framebuffer on the circuit, in the inspector, or pinned on the right.",
-  BUS_KEYBOARD:
-    "The CPU reads the key code at FF00 and whether it is pressed at FF01. Connect address pins and data outputs to the shared read bus. Capture, virtual keys, and mapping are in the inspector. Hold keys long enough for a slow program to poll them.",
-  BUS_TERMINAL:
-    "A CPU write to FF03 appends one ASCII character. Connect address, data, and Write pins. Pin the terminal to read the BIOS log or your program's output. Reset simulation clears the log.",
-  CUSTOM:
-    "A saved circuit with named input and output pins. Connect those pins like any other component. See inside opens its actual circuit and nested components. Edit its name, description, color, and shape from the library.",
-};
+export const explanations = Object.fromEntries(
+  Object.entries(componentHelp).map((
+    [kind, help],
+  ) => [kind, [help.what, help.why, help.how, help.example].join(" ")]),
+) as Record<Kind, string>;

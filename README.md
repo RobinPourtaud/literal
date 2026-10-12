@@ -197,9 +197,9 @@ Pass `result.memory` to the next `simulate` call to preserve flip-flop state.
 Use `parseCircuit` to validate external documents. See
 [the circuit format](docs/circuit-format.md).
 
-Each palette component has an **About** button. The inspector explains what it
-does and how to connect it. Custom components can store an editable description
-with their circuit definition.
+Select a component and click **Info** in the right panel. Its popup explains
+what it is, why it is useful, how to connect it, and a small example. Custom
+components can store an editable description with their circuit definition.
 
 ![Discover first-gate lesson](docs/discover.png)
 

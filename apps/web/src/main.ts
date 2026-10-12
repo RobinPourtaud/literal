@@ -1,4 +1,4 @@
-import { descriptions, explanations } from "./component-info.ts";
+import { componentHelp, descriptions } from "./component-info.ts";
 import { firstGate, lessonChecks, lessons } from "./discover.ts";
 import {
   assemble,
@@ -312,7 +312,7 @@ $("#app").innerHTML =
               : k.startsWith("BUS_")
               ? k.slice(4)
               : k
-          }<span class="place-plus">+</span></button><button class="component-info" data-about="${k}" aria-label="About ${k}" title="About ${k}">i</button></div>`
+          }<span class="place-plus">+</span></button></div>`
         ).join("")
       }</section>`
     ).join("")
@@ -748,21 +748,23 @@ function renderDetails() {
         : c.kind.startsWith("BUS_")
         ? c.kind.slice(4)
         : c.kind
-    }</h2><span class="signal-badge ${sim.values[c.id] === 1 ? "on" : ""}">${
+    }</h2><div class="component-heading-actions"><button id="component-info" data-component-info="${c.id}" aria-label="About ${
+      esc(c.label || c.kind)
+    }">Info</button><span class="signal-badge ${
+      sim.values[c.id] === 1 ? "on" : ""
+    }">${
       c.kind === "HEX_DISPLAY"
         ? hexValue(sim.inputs[c.id])?.toString(16).toUpperCase() ?? "X"
         : c.kind === "SEVEN_SEG"
         ? "a–g · dp"
         : sim.values[c.id]
-    }</span></div><p class="muted">${
+    }</span></div></div><p class="muted">${
       esc(
         c.kind === "CUSTOM"
           ? definitionOf(c, circuit)?.description || descriptions.CUSTOM
           : descriptions[c.kind],
       )
-    }</p><details class="component-explanation"><summary>How to use it</summary><p>${
-      esc(explanations[c.kind])
-    }</p></details>${
+    }</p>${
       c.kind === "CLOCK" ? clockControls(c) : ""
     }<label class="field">Label<input id="component-label" value="${
       esc(c.label)
@@ -871,6 +873,28 @@ function renderDetails() {
       `<p class="diagnostic">${sim.warnings.map(esc).join("<br>")}</p>`,
     );
   }
+}
+function showComponentInfo(c: Component) {
+  const help = componentHelp[c.kind], definition = definitionOf(c, circuit);
+  const name = definition?.name ?? c.kind.replace("BUS_", "");
+  const what = definition?.description || help.what;
+  const switchDiagram = ["NMOS", "PMOS"].includes(c.kind)
+    ? `<div class="switch-explanation" aria-label="Source passes through the switch to Drain when Gate turns it on"><div>Gate <small>controls the switch</small></div><span>Source</span><span>→ switch →</span><span>Drain</span></div>`
+    : "";
+  dialog(
+    `${name} · Info`,
+    `<article class="component-help"><section><h3>What it is</h3><p>${
+      esc(what)
+    }</p>${switchDiagram}</section><section><h3>Why use it</h3><p>${
+      esc(help.why)
+    }</p></section><section><h3>How to connect it</h3><p>${
+      esc(help.how)
+    }</p></section><section><h3>Try it</h3><p>${
+      esc(help.example)
+    }</p></section>${
+      help.note ? `<p class="component-help-note">${esc(help.note)}</p>` : ""
+    }</article>`,
+  );
 }
 function clockControls(c: Component) {
   return `<section class="clock-controls"><h3>Clock controls</h3><label class="field">Frequency (Hz)<input id="clock-frequency" data-clock-frequency="${c.id}" type="number" min="0.1" max="10000" step="0.1" value="${
@@ -1213,12 +1237,11 @@ $("#app").addEventListener("click", (e) => {
     render();
     return;
   }
-  if (b.dataset.about) {
-    const kind = b.dataset.about as Kind;
-    dialog(
-      `About ${kind.replace("BUS_", "")}`,
-      `<p>${esc(descriptions[kind])}</p><p>${esc(explanations[kind])}</p>`,
+  if (b.dataset.componentInfo) {
+    const component = circuit.components.find((c) =>
+      c.id === b.dataset.componentInfo
     );
+    if (component) showComponentInfo(component);
     return;
   }
   if (b.dataset.lesson) {

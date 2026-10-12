@@ -52,9 +52,10 @@ try {
     `(()=>{localStorage.setItem('literal.mode','playground');localStorage.setItem('literal.lessonStep','0');return 'ok'})()`,
   );
   await orca("reload");
-  await orca("wait", "--selector", "[data-about=NMOS]");
+  await orca("wait", "--selector", "#board");
+  await run(`window.literal.setCircuit(${JSON.stringify(circuit)})`);
   await run(
-    `(()=>{document.querySelector('[data-about=NMOS]').click();return 'ok'})()`,
+    `(()=>{document.querySelector('[data-node=n] .component-body').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));document.querySelector('#component-info').click();return 'ok'})()`,
   );
   assert.match(
     await run(`document.querySelector('#dialog-body').textContent`),
