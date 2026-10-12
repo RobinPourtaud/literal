@@ -5,3 +5,5 @@ dist/
 .wrangler/
 
 .vite/
+
+docs/.browser-backup.json

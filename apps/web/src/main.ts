@@ -1,6 +1,13 @@
 import { componentHelp, descriptions } from "./component-info.ts";
 import { courses, courseState } from "./discover.ts";
 import {
+  checkLab,
+  type LabReport,
+  labStarter,
+  solutions,
+  targetImage,
+} from "./curriculum.ts";
+import {
   assemble,
   type Circuit,
   type Component,
@@ -138,6 +145,20 @@ let lessonStep = Math.max(
     ),
   ),
 );
+const completedCourses = new Set<string>();
+try {
+  const ids = JSON.parse(
+    localStorage.getItem("literal.completedCourses") ?? "[]",
+  );
+  if (Array.isArray(ids)) {
+    ids.filter((id) => courses.some((c) => c.id === id && c.lab)).forEach((
+      id,
+    ) => completedCourses.add(id));
+  }
+} catch {}
+let labReport: LabReport | undefined;
+let labReportCircuit = "";
+let checkingLab = false;
 const testedGateInputs = new Set<string>();
 function restoreCourseTests() {
   testedGateInputs.clear();
@@ -647,7 +668,11 @@ function renderPreview() {
 }
 function render() {
   $("#custom-items").innerHTML = library.filter((d) =>
-    mode !== "discover" || discovered.has(d.id)
+    mode !== "discover" || discovered.has(d.id) ||
+    (d.id === "literal-alu8" &&
+      ((!freeBuild &&
+        courseIndex >= courses.findIndex((c) => c.id === "cpu")) ||
+        completedCourses.has("cpu")))
   ).map((d) =>
     `<div class="custom-library-row"><button class="palette-item ${
       placementDefinition === d.id && placement === "CUSTOM" ? "active" : ""
@@ -665,10 +690,20 @@ function render() {
     ? "Discover"
     : "Playground";
   for (const button of document.querySelectorAll<HTMLElement>("[data-place]")) {
+    const learnedKinds = new Set<string>([
+      "POWER",
+      "GROUND",
+      "NMOS",
+      "PMOS",
+      "JUNCTION",
+    ]);
+    for (const [index, course] of courses.entries()) {
+      if (
+        completedCourses.has(course.id) || (!freeBuild && index <= courseIndex)
+      ) course.unlock?.forEach((kind) => learnedKinds.add(kind));
+    }
     button.hidden = mode === "discover" &&
-      !["POWER", "GROUND", "NMOS", "PMOS", "JUNCTION"].includes(
-        button.dataset.place!,
-      );
+      !learnedKinds.has(button.dataset.place!);
     button.closest<HTMLElement>(".palette-entry")!.hidden = button.hidden;
   }
   for (
@@ -681,7 +716,8 @@ function render() {
   document.querySelectorAll<HTMLElement>("[data-example]").forEach((button) =>
     button.hidden = mode === "discover"
   );
-  $("#karnaugh-tool").hidden = mode === "discover";
+  $("#karnaugh-tool").hidden = mode === "discover" && !freeBuild &&
+    courseIndex < courses.findIndex((c) => c.id === "xor");
   $("#pinned-devices").classList.toggle("has-selection", selected.size > 0);
   renderPins();
   const active = document.activeElement as HTMLElement | null;
@@ -1281,6 +1317,81 @@ $("#app").addEventListener("click", (e) => {
     return;
   }
   if (b.dataset.lesson) {
+    if (b.dataset.lesson === "focus") {
+      const node = circuit.components.find((n) => n.id === b.dataset.focusNode);
+      if (node) {
+        selected = new Set([node.id]);
+        tab = "inspect";
+        const size = bounds();
+        camera = {
+          x: node.x - size.width / 2,
+          y: node.y - size.height / 2,
+          zoom: 1,
+        };
+        render();
+        view();
+      }
+      return;
+    }
+    if (b.dataset.lesson === "check") {
+      if (checkingLab) return;
+      checkingLab = true;
+      renderDiscover();
+      const course = courses[courseIndex];
+      const snapshot = clone(circuit);
+      setTimeout(() => {
+        const report = checkLab(course.id, snapshot);
+        checkingLab = false;
+        if (
+          courses[courseIndex].id !== course.id ||
+          JSON.stringify(circuit) !== JSON.stringify(snapshot)
+        ) {
+          renderDiscover();
+          return;
+        }
+        labReport = report;
+        labReportCircuit = JSON.stringify(snapshot);
+        if (report.passed) {
+          completedCourses.add(course.id);
+          localStorage.setItem(
+            "literal.completedCourses",
+            JSON.stringify([...completedCourses]),
+          );
+        }
+        render();
+      }, 30);
+      return;
+    }
+    if (b.dataset.lesson === "example") {
+      const course = courses[courseIndex];
+      const source = solutions[course.id];
+      const image = ["pixels", "triangle", "projection"].includes(course.id)
+        ? targetImage(course.id)
+        : undefined;
+      dialog(
+        `Example · ${course.name}`,
+        `<p class="muted">A reference to compare with your work. Your circuit stays as it is.</p>${
+          image
+            ? `<svg class="lesson-target" viewBox="0 0 32 24" role="img" aria-label="Target image"><rect width="32" height="24" fill="#101810"/>${
+              image.map((color, i) =>
+                color
+                  ? `<rect x="${i % 32}" y="${
+                    Math.floor(i / 32)
+                  }" width="1" height="1" fill="${screenColors[color]}"/>`
+                  : ""
+              ).join("")
+            }</svg>`
+            : ""
+        }${
+          source
+            ? `<pre class="lesson-source">${esc(source)}</pre>`
+            : `<p>${esc(course.steps[1].text)}</p><p>${
+              esc(course.steps[1].hint)
+            }</p>`
+        }`,
+      );
+      return;
+    }
     if (b.dataset.lesson === "hint") {
       const lesson = courses[courseIndex].steps[lessonStep];
       dialog(
@@ -1474,7 +1585,7 @@ $("#app").addEventListener("click", (e) => {
     help: () =>
       dialog(
         "Reference",
-        `<h3>Draw a circuit</h3><p>Pick a component from the library, then click the canvas. Esc returns to selection. Components snap to the 20 px grid.</p><p>Click two pins to connect them: one output and one input. Outputs can drive several inputs. Each input accepts one wire. A wire crossing is visual; it does not join the wires.</p><h3>Simulate</h3><p>Click an input block to switch between 0 and 1. Signals propagate immediately. Step toggles each clock; Run clock alternates the clock at 2 Hz. D flip-flops sample on a rising edge and start at 0. Reset clears stored state, RAM, and screens and resets clocks to 0.</p><p>X means an unconnected or unknown signal. Combinational feedback is reported. Use flip-flops for stored state. These circuits are single-bit; buses and Logisim .circ files are not supported.</p><h3>Displays</h3><p>LED lights on 1. The 7-segment display has eight independent pins: a at the top, b upper right, c lower right, d bottom, e lower left, f upper left, g middle, and dp for the decimal point. The hex display decodes four bits, with weights 1, 2, 4, 8 from top to bottom. Amber segments mean unknown inputs. Truth tables export each display input as a separate column.</p><h3>Byte devices</h3><p>Registers capture eight data bits on a rising Clock when Enable is high. Counters increment on that edge. Clear resets either immediately. RAM stores 256 bytes: eight address bits, eight data bits, Write, and Clock. Read is asynchronous; write needs Write high on a rising Clock. ROM bytes are edited as hex in the inspector. ADDER8 accepts two bytes and carry, and produces a sum and carry.</p><h3>Screen and keyboard</h3><p>VGA stores 32 × 24 RGB pixels. Connect X0–4, Y0–4 and RGB, then pulse Write. Clear resets the screen. Select Keyboard for physical-key capture, remapping, or virtual keys. It exposes eight uppercase ASCII bits and Pressed. Escape releases capture.</p><h3>Tools</h3><p>Computer runs Literal 8 assembly with registers, RAM, ROM, a stack, memory-mapped devices, and a BIOS game. It operates independently of the circuit canvas. Karnaugh simplifies 1–4 variable combinational outputs using editable Gray-order maps and don't-care cells.</p><h3>Custom components</h3><p>Select logic and choose Create component. Input/Output labels name pins; boundary connections become pins. Choose a name, color and shape. The pencil in the library edits appearance. Stateful and interactive devices stay outside custom components.</p><h3>Files and keyboard</h3><p>The current circuit is saved in this browser. Save downloads a .literal JSON file. Open imports a saved circuit. Simulation memory is reset when opening, undoing, or reloading.</p><p>⌘/Ctrl+Z undo · Shift+⌘/Ctrl+Z redo · ⌘/Ctrl+C/V copy/paste · ⌘/Ctrl+D duplicate · ⌘/Ctrl+S save · ⌘/Ctrl+O open · Delete removes selection · V select · H pan · F fit · Esc cancel. Arrow keys move selected components by one grid step; Shift moves five steps.</p><p>Keyboard users can select components and pins with Tab, then press Enter. To place without a pointer, use the Place at center button after choosing a component.</p>`,
+        `<h3>Draw a circuit</h3><p>Pick a component from the library, then click the canvas. Esc returns to selection. Components snap to the 20 px grid.</p><p>Click two pins to connect them: one output and one input. Outputs can drive several inputs. Each input accepts one wire. A wire crossing is visual; it does not join the wires.</p><h3>Simulate</h3><p>Click an input block to switch between 0 and 1. Signals propagate immediately. Select a Clock to step it, run it, or change its frequency. Each clock runs independently. D flip-flops sample on a rising edge and start at 0. Reset clears stored state, RAM, and screens and resets clocks to 0.</p><p>X means an unconnected or unknown signal. Feedback between ideal logic gates is reported. CMOS transistor networks can hold latch state; flip-flops capture data on clock edges. Wires carry single bits; byte devices have individual bit pins. Logisim .circ files are not supported.</p><h3>Displays</h3><p>LED lights on 1. The 7-segment display has eight independent pins: a at the top, b upper right, c lower right, d bottom, e lower left, f upper left, g middle, and dp for the decimal point. The hex display decodes four bits, with weights 1, 2, 4, 8 from top to bottom. Amber segments mean unknown inputs. Truth tables export each display input as a separate column.</p><h3>Byte devices</h3><p>Registers capture eight data bits on a rising Clock when Enable is high. Counters increment on that edge. Clear resets either immediately. RAM stores 256 bytes: eight address bits, eight data bits, Write, and Clock. Read is asynchronous; write needs Write high on a rising Clock. ROM bytes are edited as hex in the inspector. ADDER8 accepts two bytes and carry, and produces a sum and carry.</p><h3>Screen and keyboard</h3><p>VGA stores 32 × 24 RGB pixels. Connect X0–4, Y0–4 and RGB, then pulse Write. Clear resets the screen. Select Keyboard for physical-key capture, remapping, or virtual keys. It exposes eight uppercase ASCII bits and Pressed. Escape releases capture.</p><h3>Tools</h3><p>The wired computer examples run Literal 8 assembly on the circuit canvas. ROM, RAM, keyboard, screen, and a gate ALU connect to the CPU controller through bit wires. Discover guides you from transistors to this machine, programs, a game, and 3D projection. Karnaugh simplifies 1–4 variable combinational outputs using editable Gray-order maps and don't-care cells.</p><h3>Custom components</h3><p>Select logic and choose Create component. Input/Output labels name pins; boundary connections become pins. Choose a name, color and shape. The pencil in the library edits appearance. Stateful and interactive devices stay outside custom components.</p><h3>Files and keyboard</h3><p>The current circuit is saved in this browser. Save downloads a .literal JSON file. Open imports a saved circuit. Simulation memory is reset when opening, undoing, or reloading.</p><p>⌘/Ctrl+Z undo · Shift+⌘/Ctrl+Z redo · ⌘/Ctrl+C/V copy/paste · ⌘/Ctrl+D duplicate · ⌘/Ctrl+S save · ⌘/Ctrl+O open · Delete removes selection · V select · H pan · F fit · Esc cancel. Arrow keys move selected components by one grid step; Shift moves five steps.</p><p>Keyboard users can select components and pins with Tab, then press Enter. To place without a pointer, use the Place at center button after choosing a component.</p>`,
       ),
   };
   actions[b.id]?.();
@@ -2408,7 +2519,10 @@ function selectCourse(index: number) {
   const saved = localStorage.getItem(
     `literal.discover.course.${freeBuild ? "free" : courses[courseIndex].id}`,
   );
-  let next = blank();
+  labReport = undefined;
+  let next = !freeBuild && courses[courseIndex].lab
+    ? labStarter(courses[courseIndex].id, clone(library))
+    : blank();
   next.name = freeBuild ? "Discover workspace" : courses[courseIndex].name;
   if (saved) {
     try {
@@ -2424,7 +2538,8 @@ function chooseCourse() {
     "Discover courses",
     `<div class="example-dialog">${
       courses.map((course, index) => {
-        const unlocked = index === 0 ||
+        const unlocked = index === 0 || completedCourses.has(course.id) ||
+          completedCourses.has(courses[index - 1].id) ||
           courseState(
             courses[index - 1],
             circuit,
@@ -2437,8 +2552,10 @@ function chooseCourse() {
           unlocked ? "" : "disabled"
         }><strong>${index + 1}. ${esc(course.name)}</strong><span>${
           unlocked
-            ? "Open saved lesson workspace"
-            : "Save the previous gate to unlock"
+            ? completedCourses.has(course.id)
+              ? "✓ Completed · revisit workspace"
+              : "Open course workspace"
+            : "Complete the previous course to unlock"
         }</span></button>`;
       }).join("")
     }<button data-course="free"><strong>Continue building</strong><span>Use your discovered components on a free canvas</span></button></div>`,
@@ -2480,6 +2597,76 @@ function renderDiscover() {
         JSON.stringify([...testedGateInputs].slice(-128)),
       );
     } catch {}
+  }
+  if (course.lab) {
+    if (labReport && labReportCircuit !== JSON.stringify(circuit)) {
+      labReport = undefined;
+    }
+    const completed = completedCourses.has(course.id);
+    const lesson = course.steps[lessonStep];
+    const deviceLinks = circuit.components.filter((n) =>
+      [
+        "BUS_CPU",
+        "BUS_ROM",
+        "BUS_RAM",
+        "BUS_SCREEN",
+        "BUS_KEYBOARD",
+        "BUS_TERMINAL",
+      ].includes(n.kind) || n.id === "alu" || n.id === "clock"
+    ).map((n) =>
+      `<button data-lesson="focus" data-focus-node="${esc(n.id)}">${
+        esc(
+          n.id === "alu"
+            ? "ALU"
+            : n.kind === "BUS_CPU"
+            ? "CPU"
+            : n.kind === "BUS_ROM"
+            ? "ROM"
+            : n.label,
+        )
+      }</button>`
+    ).join("");
+    target.innerHTML =
+      `<div class="lesson-heading"><span class="lesson-progress">${
+        esc(course.name.toUpperCase())
+      } · ${
+        lessonStep + 1
+      } / ${course.steps.length}</span><div class="lesson-course-tools"><button data-lesson="courses">Courses</button><button data-lesson="hint">Hint</button><button data-lesson="example">Example</button></div></div><h2>${
+        esc(lesson.title)
+      }</h2><div class="lesson-content"><p>${
+        esc(lesson.text)
+      }</p><p class="lesson-check" role="status">${
+        checkingLab
+          ? "Testing a copy of your circuit…"
+          : labReport
+          ? esc(labReport.message)
+          : completed
+          ? "✓ Course completed · you can revisit and recheck your work"
+          : "Build on the canvas, then use Check circuit. Hint and Example explain the wiring or program."
+      }</p>${
+        deviceLinks
+          ? `<div class="lesson-devices" aria-label="Find a device">${deviceLinks}<span>F to see all</span></div>`
+          : ""
+      }</div><div class="lesson-actions"><button data-lesson="previous" ${
+        lessonStep === 0 ? "disabled" : ""
+      }>Back</button>${
+        lessonStep < course.steps.length - 1
+          ? '<button data-lesson="next">Next step</button>'
+          : ""
+      }<button data-lesson="check" ${
+        checkingLab ? "disabled" : ""
+      }>Check circuit</button>${
+        completed
+          ? `<button class="primary" data-lesson="${
+            courseIndex < courses.length - 1 ? "next-course" : "free"
+          }">${
+            courseIndex < courses.length - 1
+              ? "Next course →"
+              : "Continue building"
+          }</button>`
+          : ""
+      }</div>`;
+    return;
   }
   const lesson = course.steps[lessonStep],
     last = lessonStep === course.steps.length - 1;

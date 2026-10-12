@@ -316,7 +316,59 @@ try {
     }
   }
   await run(
-    `(()=>{document.querySelector('[data-lesson=free]').click();return 'ok'})()`,
+    `(()=>{document.querySelector('[data-lesson=next-course]').click();return 'ok'})()`,
+  );
+  const xorDefs = (await run(`window.literal.getState()`)).library;
+  const xorScene = {
+    version: 1,
+    name: "XOR",
+    definitions: xorDefs,
+    components: [
+      { id: "a", kind: "POWER", label: "A", x: 100, y: 100, value: 0 },
+      { id: "b", kind: "POWER", label: "B", x: 100, y: 300, value: 0 },
+      ...[["na", "NOT"], ["nb", "NOT"], ["left", "AND"], ["right", "AND"], [
+        "result",
+        "OR",
+      ]].map(([id, name], i) => ({
+        id,
+        kind: "CUSTOM",
+        definition: xorDefs.find((d: { name: string }) => d.name === name).id,
+        label: name,
+        x: 300 + (i % 3) * 180,
+        y: 100 + Math.floor(i / 3) * 200,
+      })),
+    ],
+    wires: [
+      ["a", "na", 0],
+      ["b", "nb", 0],
+      ["a", "left", 0],
+      ["nb", "left", 1],
+      ["na", "right", 0],
+      ["b", "right", 1],
+      ["left", "result", 0],
+      ["right", "result", 1],
+    ].map(([from, to, port], i) => ({ id: `x${i}`, from, to, port })),
+  };
+  await run(`window.literal.setCircuit(${JSON.stringify(xorScene)})`);
+  await run(
+    `(()=>{document.querySelector('[data-lesson=next]').click();document.querySelector('[data-lesson=next]').click();return 'ok'})()`,
+  );
+  for (const [a, b] of [[0, 1], [1, 0], [1, 1]]) {
+    await run(
+      `window.literal.setInputs([{id:'a',value:${a}},{id:'b',value:${b}}])`,
+    );
+  }
+  await run(
+    `(()=>{document.querySelector('[data-lesson=next]').click();document.querySelector('[data-lesson=save]').click();document.querySelector('#custom-form').requestSubmit();return 'ok'})()`,
+  );
+  assert.equal(
+    await run(
+      `JSON.stringify(!!document.querySelector('[data-lesson=next-course]'))`,
+    ),
+    true,
+  );
+  await run(
+    `(()=>{document.querySelector('[data-lesson=courses]').click();document.querySelector('[data-course=free]').click();return 'ok'})()`,
   );
   assert.match(
     await run(`document.querySelector('.lesson-progress').textContent`),
@@ -324,12 +376,12 @@ try {
   );
   const state = await run(`window.literal.getState()`);
   assert.ok(
-    ["NOT", "NAND", "AND", "OR"].every((name) =>
+    ["NOT", "NAND", "AND", "OR", "XOR"].every((name) =>
       state.library.some((d: { name: string }) => d.name === name)
     ),
   );
   console.log(
-    "PASS next courses NOT → NAND → AND → OR → free build, workspace restoration, and single placement",
+    "PASS next courses NOT → NAND → AND → OR → XOR, free build, workspace restoration, and single placement",
   );
   await run(
     `(()=>{document.querySelector('[data-lesson=courses]').click();document.querySelector('[data-course="0"]').click();return 'ok'})()`,

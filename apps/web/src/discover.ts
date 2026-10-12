@@ -1,3 +1,4 @@
+import { advancedCourses } from "./curriculum.ts";
 import {
   type Circuit,
   type Component,
@@ -130,11 +131,13 @@ export function lessonChecks(
   ];
 }
 
-type Lesson = { title: string; text: string; hint: string };
+export type Lesson = { title: string; text: string; hint: string };
 export type Course = {
   id: string;
   name: string;
   pattern: number[];
+  lab?: string;
+  unlock?: import("@literal/core").Kind[];
   steps: readonly Lesson[];
 };
 export const courses: Course[] = [
@@ -248,14 +251,49 @@ export const courses: Course[] = [
           "OR means at least one input is 1. It also gives 1 when both inputs are 1.",
       },
       {
-        title: "Save OR and keep building",
+        title: "Save OR",
         text:
           "Save the two NOT gates and NAND as OR. You now have NOT, NAND, AND, and OR in your library.",
         hint:
-          "Keep A and B outside the selection. Continue building opens a free canvas with your learned components. Courses lets you revisit any of these lessons.",
+          "Keep A and B outside the selection. Next course introduces XOR. Courses lets you revisit your earlier circuits.",
       },
     ],
   },
+  {
+    id: "xor",
+    name: "Different inputs · XOR",
+    pattern: [0, 1, 1, 0],
+    steps: [
+      {
+        title: "Detect a difference",
+        text:
+          "XOR returns 1 when exactly one input is 1. Place A and B Power inputs, two NOT gates, two AND gates, and one OR gate from your library.",
+        hint:
+          "Unlike OR, XOR returns 0 for 11. This difference will let us add binary digits.",
+      },
+      {
+        title: "Connect the two exclusive cases",
+        text:
+          "Build A AND NOT B and NOT A AND B. Connect their outputs to OR. That OR output is XOR.",
+        hint:
+          "One branch detects 10; the other detects 01. A may connect to several inputs. Keep your fixed supplies inside the saved gates.",
+      },
+      {
+        title: "Test the difference",
+        text: "Try 00, 01, 10, and 11. Expect 0, 1, 1, and 0.",
+        hint:
+          "For 11, both inverted inputs are 0, so neither AND branch can return 1.",
+      },
+      {
+        title: "Save XOR",
+        text:
+          "Save the five connected gates as XOR, keeping A and B outside the selection. Next we will add two bits.",
+        hint:
+          "Save gate selects the network. You can inspect the saved XOR recursively down to transistors.",
+      },
+    ],
+  },
+  ...advancedCourses,
 ];
 export type LearnGate = {
   inputs: Component[];
@@ -401,7 +439,12 @@ export function courseState(
   library: Definition[],
   discovered: Set<string>,
 ) {
-  const saved = savedTruth(library, discovered, course.pattern);
+  const saved = course.lab
+    ? false
+    : savedTruth(library, discovered, course.pattern);
+  if (course.lab) {
+    return { checks: course.steps.map(() => false), saved, gate: undefined };
+  }
   if (course.id === "not") {
     const first = firstGate(circuit);
     return {
@@ -456,7 +499,7 @@ export function courseState(
     : [
       controls.length >= 2 &&
       circuit.components.filter((c) => c.kind === "CUSTOM").length >=
-        (course.id === "and" ? 2 : 3),
+        (course.id === "and" ? 2 : course.id === "xor" ? 5 : 3),
       !!gate,
       testedAll,
       saved,

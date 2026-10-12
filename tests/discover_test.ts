@@ -184,7 +184,7 @@ Deno.test("NAND course checks all input combinations and saves only the gate net
 });
 Deno.test("AND and OR courses work through reusable transistor-built gates", () => {
   const not = learned("NOT"), nand = learned("NAND"), definitions = [not, nand];
-  for (const course of courses.slice(2)) {
+  for (const course of courses.filter((c) => ["and", "or"].includes(c.id))) {
     const circuit: Circuit = {
       version: 1,
       name: course.name,
@@ -280,4 +280,81 @@ Deno.test("cached course networks return nodes from the current circuit", () => 
     original.components.find((c) => c.id === gate.inputs[0].id)!.value,
     0,
   );
+});
+
+Deno.test("XOR course checks its reusable network and all four exclusive cases", () => {
+  const definitions = (["NOT", "AND", "OR"] as const).map((kind) => {
+    const c = transistorCircuit(kind)!;
+    return {
+      id: kind,
+      name: kind,
+      color: "#527d3c",
+      shape: "rounded" as const,
+      components: c.components,
+      wires: c.wires,
+    };
+  });
+  const circuit: Circuit = {
+    version: 1,
+    name: "XOR",
+    definitions,
+    components: [
+      { id: "a", kind: "POWER", label: "A", x: 0, y: 0, value: 0 },
+      { id: "b", kind: "POWER", label: "B", x: 0, y: 100, value: 0 },
+      ...[["na", "NOT"], ["nb", "NOT"], ["left", "AND"], ["right", "AND"], [
+        "result",
+        "OR",
+      ]].map(([id, definition]) => ({
+        id,
+        kind: "CUSTOM" as const,
+        definition,
+        label: definition,
+        x: 200,
+        y: 0,
+      })),
+    ],
+    wires: [
+      ["a", "na", 0],
+      ["b", "nb", 0],
+      ["a", "left", 0],
+      ["nb", "left", 1],
+      ["na", "right", 0],
+      ["b", "right", 1],
+      ["left", "result", 0],
+      ["right", "result", 1],
+    ].map(([from, to, port], i) => ({
+      id: `w${i}`,
+      from: from as string,
+      to: to as string,
+      port: port as number,
+    })),
+  };
+  const course = courses.find((c) => c.id === "xor")!,
+    tested = new Set<string>();
+  const gate = truthGate(circuit, course.pattern)!;
+  for (let row = 0; row < 4; row++) {
+    gate.inputs.forEach((n, i) => n.value = (row >> (1 - i) & 1) as 0 | 1);
+    courseState(
+      course,
+      circuit,
+      simulate(circuit),
+      tested,
+      definitions,
+      new Set(),
+    );
+  }
+  const saved = createDefinition(
+    circuit,
+    new Set(gate.members.map((n) => n.id)),
+    { id: "xor", name: "Different", color: "#527d3c", shape: "rounded" },
+  );
+  assert.deepEqual(
+    courseState(course, circuit, simulate(circuit), tested, [
+      ...definitions,
+      saved,
+    ], new Set([saved.id])).checks,
+    [true, true, true, true],
+  );
+  circuit.wires = circuit.wires.filter((w) => w.to !== "result");
+  assert.equal(truthGate(circuit, course.pattern), undefined);
 });

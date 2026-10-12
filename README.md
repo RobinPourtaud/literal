@@ -138,13 +138,44 @@ Instruction control, registers, and memory remain behavioral models. Transistors
 use digital switch semantics, including high impedance and conflicting drivers;
 this is not an analog electrical simulator or a PC BIOS emulator.
 
-Choose **Discover** at launch to start with power, ground, transistors, and
-junctions. A six-step first-gate lesson guides you through supplies, PMOS/NMOS
-switches, wiring, and testing a NOT gate. Hints explain each connection, and
-steps check your actual circuit. Other built-in components are hidden; save your
-circuits as reusable components to build your own library. **Playground**
-provides all components and examples. The modes retain separate circuit
-workspaces.
+Choose **Discover** to start with power, ground, transistors, and junctions. The
+tutorial stays above the canvas; **Hint** opens a short explanation. Each course
+keeps its own canvas. **Next course** advances after a functional check;
+**Courses** revisits unlocked workspaces. Placing one component returns to
+Select. **Playground** provides all devices and examples immediately, in a
+separate workspace.
+
+Discover now has **23 courses**, from a first transistor gate to a connected
+computer running a game and a small 3D wireframe:
+
+- NOT, NAND, AND, OR, XOR
+- Half adder, full adder, eight-bit ripple-carry adder, multiplexer
+- SR latch, byte register, RAM, ROM
+- One-bit ALU, wired CPU, opcodes, BIOS
+- Pixels, filled triangle, keyboard input, animation, move-to-target game,
+  orthographic 3D projection
+
+The first gates must be tested and saved as reusable components. Later labs
+provide labelled input/output probes or an editable practice machine. **Check
+circuit** tests a fresh copy without changing the live canvas. It reports the
+failing input, memory value, or pixel. **Example** shows reference wiring or
+assembly and target images. A passed lab persists completion; revisiting or
+editing it preserves the achievement and lets you recheck the current circuit.
+Relevant devices become available as their courses introduce them. **Karnaugh**
+is available from XOR onward to explore Boolean expressions.
+
+The latch lab exposes both CMOS networks because feedback across separate custom
+gates is not supported. Clocked flip-flops, RAM, ROM, the CPU controller, and
+peripherals are behavioral devices. The computer's ALU is a gate network; **See
+inside** inspects it recursively. The projection lesson uses CPU arithmetic and
+pixel writes; it does not implement a GPU or a complete transistor CPU.
+
+![Discover course path](docs/discover-courses.png)
+
+![Projection on the connected computer](docs/discover-projection.png)
+
+See [the course guide](docs/discover.md) for checks, persistence, and model
+scope.
 
 Open **Karnaugh** to edit a 1–4 variable map or load an output from the current
 combinational circuit. Cells cycle through 0, 1, and don't-care X. Gray
@@ -219,12 +250,14 @@ browser tab for this worktree, and run `deno task browser-check`. Run
 `deno task features-check` to check displays and custom-component creation and
 reuse. Run `deno task computer-check` for screen writes, BIOS execution, device
 controls, adjustable clock frequency, recursive transistor inspection, and
-discovery mode. Run `deno task discover-check` to check the first-gate lesson,
-descriptions, saving, and persistence. Run `deno task clock-check` to verify
-independent playback, saved frequencies, and the compact layout. Computer,
-Discover, and API checks preserve the browser's saved circuits, library, mode,
-and preferences. The checks dispatch DOM pointer and keyboard events through
-Orca's browser evaluation API; they do not certify native mouse or touch input.
+discovery mode. Run `deno task discover-check
+deno task curriculum-check` to
+check the first-gate lesson, descriptions, saving, and persistence. Run
+`deno task clock-check` to verify independent playback, saved frequencies, and
+the compact layout. Computer, Discover, and API checks preserve the browser's
+saved circuits, library, mode, and preferences. The checks dispatch DOM pointer
+and keyboard events through Orca's browser evaluation API; they do not certify
+native mouse or touch input.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md). Original code is MIT licensed. Logisim
 is an inspiration; no Logisim source is included.

@@ -1595,3 +1595,39 @@ dialog:has(.component-help) .dialog-heading {
   font-size: 12px;
   padding: 5px 9px;
 }
+
+.lesson-source {
+  max-height: 45dvh;
+  overflow: auto;
+  white-space: pre;
+  padding: 16px;
+  border-radius: 8px;
+  background: var(--surface);
+  font: 12px/1.6 monospace;
+  user-select: text;
+}
+.lesson-target {
+  display: block;
+  width: 256px;
+  max-width: 100%;
+  margin: 12px 0;
+  border-radius: 8px;
+  image-rendering: pixelated;
+}
+
+.lesson-devices {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin: 6px 0;
+}
+.lesson-devices button {
+  padding: 3px 7px;
+  font-size: 11px;
+}
+.lesson-devices span {
+  font-size: 10px;
+  color: var(--muted);
+  margin-left: 4px;
+}
