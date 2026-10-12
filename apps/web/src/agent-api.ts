@@ -31,7 +31,7 @@ export interface LiteralActions {
   truthTable(): unknown;
   createComponent(
     ids: string[],
-    options: Pick<Definition, "name" | "color" | "shape">,
+    options: Pick<Definition, "name" | "color" | "shape" | "description">,
   ): unknown;
   history(direction: "undo" | "redo"): unknown;
   computer(input: ComputerInput): unknown;
@@ -203,6 +203,7 @@ export function agentTools(actions: LiteralActions): AgentTool[] {
       object({
         ids: { type: "array", minItems: 1, maxItems: 500, items: text(80, 1) },
         name: text(80, 1),
+        description: text(600),
         color: text(7, 7),
         shape: { type: "string", enum: ["rounded", "rectangle", "diamond"] },
       }, ["ids", "name", "color", "shape"]),
@@ -210,7 +211,10 @@ export function agentTools(actions: LiteralActions): AgentTool[] {
       (p) =>
         actions.createComponent(
           p.ids as string[],
-          p as unknown as Pick<Definition, "name" | "color" | "shape">,
+          p as unknown as Pick<
+            Definition,
+            "name" | "color" | "shape" | "description"
+          >,
         ),
     ),
     tool(
@@ -316,6 +320,7 @@ export function createAgentAPI(actions: LiteralActions) {
       options: {
         ids: string[];
         name: string;
+        description?: string;
         color: string;
         shape: Definition["shape"];
       },

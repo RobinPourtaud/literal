@@ -1389,3 +1389,98 @@ dialog::backdrop {
   max-height: 180px;
   flex-shrink: 0;
 }
+.palette-entry {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+.palette-entry .palette-item {
+  flex: 1;
+  min-width: 0;
+}
+.component-info {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  color: var(--muted);
+  font: 12px Georgia, serif;
+  padding: 0;
+}
+#discover-guide {
+  margin: 0 0 20px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #edf1e7;
+}
+#discover-guide h2 {
+  font-size: 14px;
+  line-height: 1.5;
+  letter-spacing: 0;
+  margin: 8px 0;
+  color: #303a32;
+}
+#discover-guide p {
+  font-size: 12px;
+  line-height: 1.6;
+  margin: 8px 0;
+}
+#discover-guide summary {
+  font-size: 12px;
+  cursor: pointer;
+}
+.lesson-progress {
+  font-size: 10px;
+  color: var(--muted);
+  letter-spacing: .06em;
+}
+.lesson-actions {
+  display: flex;
+  gap: 6px;
+}
+.lesson-actions button {
+  padding: 7px 9px;
+  font-size: 11px;
+}
+.lesson-check {
+  color: var(--green);
+}
+.component-explanation {
+  margin: 8px 0 16px;
+  font-size: 12px;
+  line-height: 1.65;
+}
+.component-explanation summary {
+  cursor: pointer;
+}
+
+#discover-guide {
+  max-height: 42dvh;
+  overflow: auto;
+}
+.lesson-actions {
+  flex-wrap: wrap;
+}
+.lesson-signals {
+  font-size: 12px;
+  padding: 8px;
+  background: #f9faf6;
+  border-radius: 6px;
+}
+
+#discover-guide {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.lesson-content {
+  overflow: auto;
+  min-height: 0;
+}
+.lesson-progress,
+#discover-guide h2,
+.lesson-actions {
+  flex-shrink: 0;
+}

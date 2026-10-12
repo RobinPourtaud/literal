@@ -137,9 +137,12 @@ use digital switch semantics, including high impedance and conflicting drivers;
 this is not an analog electrical simulator or a PC BIOS emulator.
 
 Choose **Discover** at launch to start with power, ground, transistors, and
-junctions. Other built-in components are hidden; save your circuits as reusable
-components to build your own library. **Playground** provides all components and
-examples. The modes retain separate circuit workspaces.
+junctions. A six-step first-gate lesson guides you through supplies, PMOS/NMOS
+switches, wiring, and testing a NOT gate. Hints explain each connection, and
+steps check your actual circuit. Other built-in components are hidden; save your
+circuits as reusable components to build your own library. **Playground**
+provides all components and examples. The modes retain separate circuit
+workspaces.
 
 Open **Karnaugh** to edit a 1–4 variable map or load an output from the current
 combinational circuit. Cells cycle through 0, 1, and don't-care X. Gray
@@ -192,6 +195,12 @@ Pass `result.memory` to the next `simulate` call to preserve flip-flop state.
 Use `parseCircuit` to validate external documents. See
 [the circuit format](docs/circuit-format.md).
 
+Each palette component has an **About** button. The inspector explains what it
+does and how to connect it. Custom components can store an editable description
+with their circuit definition.
+
+![Discover first-gate lesson](docs/discover.png)
+
 ## Development
 
 - `packages/core/`: gate evaluation, state, document validation, and truth
@@ -205,10 +214,11 @@ browser tab for this worktree, and run `deno task browser-check`. Run
 `deno task features-check` to check displays and custom-component creation and
 reuse. Run `deno task computer-check` for screen writes, BIOS execution, device
 controls, adjustable clock frequency, recursive transistor inspection, and
-discovery mode. Computer and API checks preserve the browser's saved circuits,
-library, mode, and preferences. The checks dispatch DOM pointer and keyboard
-events through Orca's browser evaluation API; they do not certify native mouse
-or touch input.
+discovery mode. Run `deno task discover-check` to check the first-gate lesson,
+descriptions, saving, and persistence. Computer, Discover, and API checks
+preserve the browser's saved circuits, library, mode, and preferences. The
+checks dispatch DOM pointer and keyboard events through Orca's browser
+evaluation API; they do not certify native mouse or touch input.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md). Original code is MIT licensed. Logisim
 is an inspiration; no Logisim source is included.

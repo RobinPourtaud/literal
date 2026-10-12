@@ -1,3 +1,5 @@
+import { descriptions, explanations } from "./component-info.ts";
+import { firstGate, lessonChecks, lessons } from "./discover.ts";
 import {
   assemble,
   type Circuit,
@@ -117,6 +119,14 @@ try {
     );
   }
 } catch {}
+let lessonStep = Math.max(
+  0,
+  Math.min(
+    lessons.length - 1,
+    Number(localStorage.getItem("literal.lessonStep")) || 0,
+  ),
+);
+const testedGateInputs = new Set<string>();
 let pins = new Set<string>();
 let memory: Memory = { q: {}, clock: {} };
 let keyboards: Record<string, KeyboardState> = {};
@@ -179,59 +189,6 @@ function retainDefinitions() {
     );
   }
 }
-const descriptions: Record<Kind, string> = {
-  NMOS:
-    "Conducts source to drain when Gate is 1; otherwise high impedance (Z).",
-  PMOS:
-    "Conducts source to drain when Gate is 0; otherwise high impedance (Z).",
-  POWER: "Ideal logic supply (1).",
-  GROUND: "Ideal ground (0).",
-  JUNCTION:
-    "Merge two electrical drivers. Z floats; conflicting drivers give X.",
-  BUS_CPU:
-    "Literal 8 instruction controller and registers. Uses the wired data bus and external ALU.",
-  BUS_ROM: "8 KiB boot ROM. 16-bit address bus. Edit assembly or hex bytes.",
-  BUS_RAM:
-    "52 KiB RAM. Address, data and write pins; non-selected addresses output zero.",
-  BUS_SCREEN:
-    "32 × 24 RGB framebuffer on F000–F2FF. Visible on the circuit; pin for a larger view.",
-  BUS_KEYBOARD:
-    "Addressed keyboard interface at FF00 / FF01. Pin to capture keys.",
-  BUS_TERMINAL: "ASCII output at FF03. Pin to read boot and program output.",
-  INPUT: "Toggle a logic signal.",
-  OUTPUT: "Show a signal value.",
-  LED: "Light when the input is high. Amber means unknown.",
-  SEVEN_SEG:
-    "Drive segments a–g and the decimal point separately. 1 lights a segment; X is shown in amber.",
-  HEX_DISPLAY:
-    "Show hexadecimal 0–F from four bits. Bit 0 has weight 1; bit 3 has weight 8. All four inputs must be connected.",
-  VGA:
-    "32 × 24 RGB pixel screen. Write on a rising edge; Clear resets the framebuffer.",
-  KEYBOARD:
-    "Mapped physical and virtual keys. Eight ASCII bits and a Pressed output.",
-  REGISTER8:
-    "Eight-bit register. Rising Clock captures data when Enable is high. Clear resets immediately.",
-  COUNTER8:
-    "Eight-bit counter. Rising Clock increments when Enable is high. Clear resets immediately.",
-  ADDER8: "Eight-bit addition with carry in and carry out.",
-  RAM:
-    "256-byte RAM. Write on a rising Clock when Write is high. Read is asynchronous.",
-  ROM:
-    "256-byte ROM. Edit hex bytes in the inspector. Missing bytes read as zero.",
-  AND: "High when both inputs are high.",
-  OR: "High when either input is high.",
-  NOT: "Invert an input.",
-  NAND: "AND followed by inversion.",
-  NOR: "OR followed by inversion.",
-  XOR: "High when inputs differ.",
-  XNOR: "High when inputs match.",
-  BUFFER: "Pass a signal through.",
-  MUX: "Select data 0 or data 1.",
-  CLOCK: "A clock you can step or run.",
-  DFF: "Store data on the rising clock edge.",
-  CUSTOM:
-    "A reusable gate or switch network. Pin names come from its Input and Output blocks.",
-};
 const groups: { name: string; kinds: Kind[] }[] = [
   {
     name: "ELECTRICITY",
@@ -271,11 +228,11 @@ $("#app").innerHTML =
   }<span>Components</span></button><button id="mode-button">Playground</button><button id="karnaugh-tool">Karnaugh</button><button id="help">Reference</button></nav><a class="source-link" href="https://github.com/RobinPourtaud/literal" target="_blank" rel="noopener">Source ${
     icon("ArrowUpRight")
   }</a></header>
-<div class="shell"><aside class="library"><div class="library-scroll"><div class="sidebar-title">COMPONENTS <kbd>click to place</kbd></div><section class="custom-library"><h2>CUSTOM</h2><button id="create-custom">+ Create component</button><div id="custom-items"></div></section>${
+<div class="shell"><aside class="library"><div class="library-scroll"><div class="sidebar-title">COMPONENTS <kbd>click to place</kbd></div><section id="discover-guide" hidden></section><section class="custom-library"><h2>CUSTOM</h2><button id="create-custom">+ Create component</button><div id="custom-items"></div></section>${
     groups.map((g) =>
       `<section class="palette-group"><h2>${g.name}</h2>${
         g.kinds.map((k) =>
-          `<button class="palette-item" data-place="${k}" title="${
+          `<div class="palette-entry"><button class="palette-item" data-place="${k}" title="${
             descriptions[k]
           }"><span class="gate-symbol">${
             ({
@@ -344,7 +301,7 @@ $("#app").innerHTML =
               : k.startsWith("BUS_")
               ? k.slice(4)
               : k
-          }<span class="place-plus">+</span></button>`
+          }<span class="place-plus">+</span></button><button class="component-info" data-about="${k}" aria-label="About ${k}" title="About ${k}">i</button></div>`
         ).join("")
       }</section>`
     ).join("")
@@ -624,6 +581,7 @@ function render() {
     }">${icon("Pencil")}</button></div>`
   ).join("");
 
+  renderDiscover();
   $("#mode-button").textContent = mode === "discover"
     ? "Discover"
     : "Playground";
@@ -632,6 +590,7 @@ function render() {
       !["POWER", "GROUND", "NMOS", "PMOS", "JUNCTION"].includes(
         button.dataset.place!,
       );
+    button.closest<HTMLElement>(".palette-entry")!.hidden = button.hidden;
   }
   for (
     const group of document.querySelectorAll<HTMLElement>(".palette-group")
@@ -768,8 +727,14 @@ function renderDetails() {
         ? "a–g · dp"
         : sim.values[c.id]
     }</span></div><p class="muted">${
-      descriptions[c.kind]
-    }</p><label class="field">Label<input id="component-label" value="${
+      esc(
+        c.kind === "CUSTOM"
+          ? definitionOf(c, circuit)?.description || descriptions.CUSTOM
+          : descriptions[c.kind],
+      )
+    }</p><details class="component-explanation"><summary>How to use it</summary><p>${
+      esc(explanations[c.kind])
+    }</p></details><label class="field">Label<input id="component-label" value="${
       esc(c.label)
     }" maxlength="80"></label><div class="position-fields"><label class="field">X<input id="component-x" type="number" step="20" value="${c.x}" min="-100000" max="100000"></label><label class="field">Y<input id="component-y" type="number" step="20" value="${c.y}" min="-100000" max="100000"></label></div>${
       c.kind === "INPUT" || c.kind === "CLOCK" || c.kind === "POWER"
@@ -1189,6 +1154,36 @@ $("#app").addEventListener("click", (e) => {
   const target = e.target as Element,
     b = target.closest<HTMLElement>("button,[data-example],.pin,.wire");
   if (!b) return;
+  if (b.dataset.about) {
+    const kind = b.dataset.about as Kind;
+    dialog(
+      `About ${kind.replace("BUS_", "")}`,
+      `<p>${esc(descriptions[kind])}</p><p>${esc(explanations[kind])}</p>`,
+    );
+    return;
+  }
+  if (b.dataset.lesson) {
+    if (b.dataset.lesson === "next") {
+      lessonStep = Math.min(lessons.length - 1, lessonStep + 1);
+    }
+    if (b.dataset.lesson === "previous") {
+      lessonStep = Math.max(0, lessonStep - 1);
+    }
+    if (b.dataset.lesson === "save") {
+      const gate = firstGate(circuit);
+      if (gate) {
+        selected = new Set(gate.members.map((c) => c.id));
+        render();
+        customDialog();
+        $<HTMLInputElement>("#custom-name").value = "NOT";
+        $<HTMLTextAreaElement>("#custom-description").value =
+          "Inverts its input: 0 becomes 1, and 1 becomes 0. Built from CMOS transistors.";
+      }
+    }
+    localStorage.setItem("literal.lessonStep", String(lessonStep));
+    renderDiscover();
+    return;
+  }
   if (b.dataset.editCustom) {
     const def = library.find((d) => d.id === b.dataset.editCustom);
     if (def) appearanceDialog(def);
@@ -1411,7 +1406,9 @@ function appearanceDialog(def: Definition) {
     "Component appearance",
     `<form id="appearance-form" data-definition="${def.id}"><label class="field">Component name<input id="appearance-name" value="${
       esc(def.name)
-    }" maxlength="80" required></label><label class="field">Color<input id="appearance-color" type="color" value="${def.color}"></label><label class="field">Shape<select id="appearance-shape">${
+    }" maxlength="80" required></label><label class="field">Description<textarea id="appearance-description" maxlength="600" rows="3">${
+      esc(def.description ?? "")
+    }</textarea></label><label class="field">Color<input id="appearance-color" type="color" value="${def.color}"></label><label class="field">Shape<select id="appearance-shape">${
       ["rounded", "rectangle", "diamond"].map((shape) =>
         `<option value="${shape}" ${
           shape === def.shape ? "selected" : ""
@@ -1431,6 +1428,7 @@ $("#dialog-body").addEventListener("submit", (e) => {
   const def = {
     ...original,
     name,
+    description: $<HTMLTextAreaElement>("#appearance-description").value.trim(),
     color: $<HTMLInputElement>("#appearance-color").value,
     shape: $<HTMLSelectElement>("#appearance-shape")
       .value as Definition["shape"],
@@ -1458,7 +1456,7 @@ function customDialog() {
     "Create component",
     `<form id="custom-form"><p class="muted">Save the selected circuit to your library. Input and Output labels become pin names. Unconnected pins and connections crossing the selection become pins automatically.</p><label class="field">Component name<input id="custom-name" maxlength="80" required value="${
       esc(circuit.name.slice(0, 80))
-    }"></label><label class="field">Color<input id="custom-color" type="color" value="#527d3c"></label><label class="field">Shape<select id="custom-shape"><option value="rounded">Rounded rectangle</option><option value="rectangle">Rectangle</option><option value="diamond">Diamond</option></select></label><p class="muted">Combinational circuits only. Stateful and interactive devices can connect to the component from outside.</p><p id="custom-error" role="alert"></p><button class="primary" type="submit">Save component</button></form>`,
+    }"></label><label class="field">Description<textarea id="custom-description" maxlength="600" rows="3" placeholder="What this component does and how to use its pins"></textarea></label><label class="field">Color<input id="custom-color" type="color" value="#527d3c"></label><label class="field">Shape<select id="custom-shape"><option value="rounded">Rounded rectangle</option><option value="rectangle">Rectangle</option><option value="diamond">Diamond</option></select></label><p class="muted">Save gate and transistor networks. Keep behavioral memory and interactive devices outside the selection.</p><p id="custom-error" role="alert"></p><button class="primary" type="submit">Save component</button></form>`,
   );
 }
 $("#dialog-body").addEventListener("submit", (e) => {
@@ -1468,6 +1466,7 @@ $("#dialog-body").addEventListener("submit", (e) => {
     const def = createDefinition(circuit, selected, {
       id: uid(),
       name: $<HTMLInputElement>("#custom-name").value.trim(),
+      description: $<HTMLTextAreaElement>("#custom-description").value.trim(),
       color: $<HTMLInputElement>("#custom-color").value,
       shape: $<HTMLSelectElement>("#custom-shape").value as Definition["shape"],
     });
@@ -1855,6 +1854,7 @@ window.literal = createAgentAPI({
     const def = createDefinition(circuit, new Set(ids), {
       id: uid(),
       name: options.name,
+      description: options.description,
       color: options.color,
       shape: options.shape,
     });
@@ -2230,6 +2230,55 @@ $("#dialog-body").addEventListener("click", (event) => {
     c = page?.circuit.components.find((c) => c.id === target.dataset.node);
   if (page && c) navigateInside(c, page.circuit, page.simulation);
 });
+function renderDiscover() {
+  const target = $("#discover-guide");
+  target.hidden = mode !== "discover";
+  if (mode !== "discover") return;
+  const hintOpen = target.querySelector("details")?.open ?? false;
+  const checks = lessonChecks(
+    circuit,
+    sim,
+    testedGateInputs,
+    library,
+    discovered,
+  );
+  const lesson = lessons[lessonStep];
+  const gate = firstGate(circuit);
+  const live = gate
+    ? `<div class="lesson-signals">A <strong>${
+      sim.values[gate.input.id]
+    }</strong> → Output <strong>${sim.values[gate.output.id]}</strong></div>`
+    : "";
+  target.innerHTML = `<div class="lesson-progress">FIRST GATE · ${
+    lessonStep + 1
+  } / ${lessons.length}</div><h2>${
+    esc(lesson.title)
+  }</h2><div class="lesson-content"><p>${esc(lesson.text)}</p>${live}<details ${
+    hintOpen ? "open" : ""
+  }><summary>Hint</summary><p>${
+    esc(lesson.hint)
+  }</p></details><p class="lesson-check" role="status">${
+    checks[lessonStep]
+      ? "✓ Step complete"
+      : lessonStep === 4
+      ? "Test A at both 0 and 1"
+      : "Build this step on the canvas"
+  }</p></div><div class="lesson-actions"><button data-lesson="previous" ${
+    lessonStep === 0 ? "disabled" : ""
+  }>Back</button>${
+    lessonStep === 5
+      ? `<button data-lesson="save" ${
+        !firstGate(circuit) ? "disabled" : ""
+      }>Save gate</button>`
+      : `<button class="primary" data-lesson="next" ${
+        checks[lessonStep] ? "" : "disabled"
+      }>Next</button>`
+  }</div>${
+    lessonStep === 5 && checks[5]
+      ? "<p>Your gate is in the library. Try building NAND next.</p>"
+      : ""
+  }`;
+}
 function chooseMode() {
   dialog(
     "Choose a mode",

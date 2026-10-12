@@ -131,7 +131,9 @@ function shape(
     }</text>`;
   }
   if (kind === "JUNCTION") {
-    return '<circle class="gate-shape" r="20"/><text class="signal-number" y="6">⊙</text>';
+    return `<circle class="gate-shape ${
+      signalClass(signal)
+    }" r="20"/><text class="signal-number" y="6">${signal}</text>`;
   }
   if (kind.startsWith("BUS_") && kind !== "BUS_SCREEN") {
     const height = dimensions(c, circuit).height - 32;

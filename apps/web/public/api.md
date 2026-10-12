@@ -128,6 +128,10 @@ with `kind: 'CUSTOM'`, `definition: definition.id`, position and label. Custom
 input/output pin order follows the definition's INPUT/OUTPUT node order.
 Definitions can contain other combinational custom components.
 
+Custom definitions accept an optional `description` string (maximum 600
+characters). `createComponent` accepts the same optional field; it is preserved
+in circuit files and shown in the inspector.
+
 ## Computer
 
 The wired Literal 8 computer uses eight byte registers and 16-bit addresses. It

@@ -79,6 +79,7 @@ export interface Circuit {
   definitions?: Definition[];
 }
 export interface Definition {
+  description?: string;
   id: string;
   name: string;
   color: string;
@@ -907,12 +908,15 @@ export function parseCircuit(text: string): Circuit {
     (d: Definition) => {
       if (
         !d || !validId(d.id) || typeof d.name !== "string" || !d.name.trim() ||
+        (d.description !== undefined &&
+          (typeof d.description !== "string" || d.description.length > 600)) ||
         d.name.length > 80 || !/^#[0-9a-f]{6}$/i.test(d.color) ||
         !["rectangle", "rounded", "diamond"].includes(d.shape)
       ) throw Error("Invalid custom component definition.");
       return {
         id: d.id,
         name: d.name,
+        ...(d.description !== undefined ? { description: d.description } : {}),
         color: d.color,
         shape: d.shape,
         components: d.components,
@@ -1136,7 +1140,7 @@ export function truthTable(circuit: Circuit) {
 export function createDefinition(
   circuit: Circuit,
   selected: Set<string>,
-  options: Pick<Definition, "id" | "name" | "color" | "shape">,
+  options: Pick<Definition, "id" | "name" | "color" | "shape" | "description">,
 ): Definition {
   const components = structuredClone(
     circuit.components.filter((c) => selected.has(c.id)),
